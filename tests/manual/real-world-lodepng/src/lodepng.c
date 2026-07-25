@@ -1,0 +1,1 @@
+#include "../upstream/lodepng.cpp"

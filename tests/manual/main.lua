@@ -1,0 +1,10 @@
+local wasm_module_loader = dofile("tests/manual/generated/test.lua")
+
+print("Starting LuaJIT benchmark...")
+local wasm = wasm_module_loader()
+local start_time = os.clock()
+local result, _ = wasm.render_frame(0.0)
+-- local result, _ = wasm.add(1,2)
+local end_time = os.clock()
+print("Result (Hash): " .. tostring(result))
+print("LuaJIT Execution time: " .. string.format("%.4f", end_time - start_time) .. " seconds")

@@ -1,0 +1,6 @@
+#ifndef SPIDER_LODEPNG_LIMITS_H
+#define SPIDER_LODEPNG_LIMITS_H
+
+#define LONG_MAX 2147483647L
+
+#endif

@@ -1,0 +1,42 @@
+[
+    {
+        "directory":  "D:\\Backups\\Spider\\tests\\manual\\real-world-h264bsd-mp4",
+        "arguments":  [
+                          "clang",
+                          "-c",
+                          "-ID:\\Backups\\Spider\\tests\\manual\\real-world-h264bsd-mp4\\include",
+                          "D:\\Backups\\Spider\\tests\\manual\\real-world-h264bsd-mp4\\src\\module.c"
+                      ],
+        "file":  "D:\\Backups\\Spider\\tests\\manual\\real-world-h264bsd-mp4\\src\\module.c"
+    },
+    {
+        "directory":  "D:\\Backups\\Spider\\tests\\manual\\real-world-h264bsd-mp4",
+        "arguments":  [
+                          "clang",
+                          "-c",
+                          "-ID:\\Backups\\Spider\\tests\\manual\\real-world-h264bsd-mp4\\include",
+                          "D:\\Backups\\Spider\\tests\\manual\\real-world-h264bsd-mp4\\src\\h264bsd.c"
+                      ],
+        "file":  "D:\\Backups\\Spider\\tests\\manual\\real-world-h264bsd-mp4\\src\\h264bsd.c"
+    },
+    {
+        "directory":  "D:\\Backups\\Spider\\tests\\manual\\real-world-h264bsd-mp4",
+        "arguments":  [
+                          "clang",
+                          "-c",
+                          "-ID:\\Backups\\Spider\\tests\\manual\\real-world-h264bsd-mp4\\include",
+                          "D:\\Backups\\Spider\\tests\\manual\\real-world-h264bsd-mp4\\src\\shim.c"
+                      ],
+        "file":  "D:\\Backups\\Spider\\tests\\manual\\real-world-h264bsd-mp4\\src\\shim.c"
+    },
+    {
+        "directory":  "D:\\Backups\\Spider\\tests\\manual\\real-world-h264bsd-mp4",
+        "arguments":  [
+                          "clang",
+                          "-c",
+                          "-ID:\\Backups\\Spider\\tests\\manual\\real-world-h264bsd-mp4\\include",
+                          "D:\\Backups\\Spider\\tests\\manual\\real-world-h264bsd-mp4\\src\\minimp4.c"
+                      ],
+        "file":  "D:\\Backups\\Spider\\tests\\manual\\real-world-h264bsd-mp4\\src\\minimp4.c"
+    }
+]
