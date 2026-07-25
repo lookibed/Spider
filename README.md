@@ -1,5 +1,9 @@
 # Spider
 
+> **Это форк [SovereignSatellite/Spider](https://github.com/SovereignSatellite/Spider).**
+> Основное отличие от upstream — добавлен таргет **`lua-no-ffi`**: чистая Lua-кодогенерация без FFI, позволяющая запускать скомпилированные wasm-модули в средах где FFI недоступен (песочницы LuaJIT, PUC-Rio Lua 5.1/5.2).
+> Подробнее о таргете: [`docs/notes/lua-no-ffi-status.md`](docs/notes/lua-no-ffi-status.md).
+
 Spider is an experimental compiler based on WebAssembly semantics and the Regionalized Value State Dependence Graph research. It compiles `.wasm` binaries to Luau or LuaJIT source files.
 
 ## Manual Testing
