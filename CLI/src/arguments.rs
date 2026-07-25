@@ -11,6 +11,7 @@ pub enum Target {
 	Json,
 	Luau,
 	LuaJIT,
+	LuaNoFFI,
 }
 
 #[derive(Parser)]

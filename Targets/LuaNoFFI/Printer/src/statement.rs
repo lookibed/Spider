@@ -1,16 +1,16 @@
 mod conditional {
 	use std::io::{Result, Write};
 
-	use luajit_tree::{expression::Expression, statement::Sequence};
+	use luanoffi_tree::{expression::Expression, statement::Sequence};
 
-	use crate::{LuaJITPrinter, print::Print as _};
+	use crate::{LuaNoFFIPrinter, print::Print as _};
 
 	fn print_recursive(
 		branches: &[Sequence],
 		condition: &Expression,
 		start: usize,
 		end: usize,
-		printer: &mut LuaJITPrinter,
+		printer: &mut LuaNoFFIPrinter,
 		out: &mut dyn Write,
 	) -> Result<()> {
 		let center = start + (end - start) / 2;
@@ -67,7 +67,7 @@ mod conditional {
 	pub fn print_match(
 		branches: &[Sequence],
 		condition: &Expression,
-		printer: &mut LuaJITPrinter,
+		printer: &mut LuaNoFFIPrinter,
 		out: &mut dyn Write,
 	) -> Result<()> {
 		let len = branches.len() - 1;
@@ -101,7 +101,7 @@ mod conditional {
 	fn print_if_true(
 		code: &Sequence,
 		condition: &Expression,
-		printer: &mut LuaJITPrinter,
+		printer: &mut LuaNoFFIPrinter,
 		out: &mut dyn Write,
 	) -> Result<()> {
 		printer.tab(out)?;
@@ -122,7 +122,7 @@ mod conditional {
 	fn print_if_false(
 		code: &Sequence,
 		condition: &Expression,
-		printer: &mut LuaJITPrinter,
+		printer: &mut LuaNoFFIPrinter,
 		out: &mut dyn Write,
 	) -> Result<()> {
 		printer.tab(out)?;
@@ -144,7 +144,7 @@ mod conditional {
 		on_false: &Sequence,
 		on_true: &Sequence,
 		condition: &Expression,
-		printer: &mut LuaJITPrinter,
+		printer: &mut LuaNoFFIPrinter,
 		out: &mut dyn Write,
 	) -> Result<()> {
 		printer.tab(out)?;
@@ -173,7 +173,7 @@ mod conditional {
 		on_false: &Sequence,
 		on_true: &Sequence,
 		condition: &Expression,
-		printer: &mut LuaJITPrinter,
+		printer: &mut LuaNoFFIPrinter,
 		out: &mut dyn Write,
 	) -> Result<()> {
 		let false_empty = on_false.list.is_empty();
@@ -189,8 +189,8 @@ mod conditional {
 
 use std::io::{Result, Write};
 
-use luajit_tree::{
-	LuaJITTree,
+use luanoffi_tree::{
+	LuaNoFFITree,
 	statement::{
 		Assign, Call, Export, GlobalSet, Match, MemoryCopy, MemoryDrop, MemoryFill, MemoryStore,
 		Repeat, Sequence, Statement, SwapAll, TableCopy, TableDrop, TableFill, TableSet,
@@ -198,14 +198,26 @@ use luajit_tree::{
 };
 
 use crate::{
-	LuaJITPrinter,
+	LuaNoFFIPrinter,
 	expression::{fmt_delimited, fmt_locals, fmt_stack_enter, fmt_stack_leave},
 	library::NeedsName as _,
 	print::Print,
 };
 
+fn runtime_binding_name(section: &str) -> String {
+	if section.starts_with("into_bits_") || section.starts_with("from_bits_") {
+		section.to_owned()
+	} else {
+		alloc::format!("rt_{section}")
+	}
+}
+
+fn use_table_backed_module_locals(printer: &LuaNoFFIPrinter, locals: &[luanoffi_tree::expression::Name]) -> bool {
+	locals.len() + printer.runtime_names().len() + 2 >= 200
+}
+
 impl Print for Match {
-	fn print(&self, printer: &mut LuaJITPrinter, out: &mut dyn Write) -> Result<()> {
+	fn print(&self, printer: &mut LuaNoFFIPrinter, out: &mut dyn Write) -> Result<()> {
 		let Self {
 			branches,
 			condition,
@@ -220,7 +232,7 @@ impl Print for Match {
 }
 
 impl Print for Repeat {
-	fn print(&self, printer: &mut LuaJITPrinter, out: &mut dyn Write) -> Result<()> {
+	fn print(&self, printer: &mut LuaNoFFIPrinter, out: &mut dyn Write) -> Result<()> {
 		let Self { code, condition } = self;
 
 		printer.tab(out)?;
@@ -238,7 +250,7 @@ impl Print for Repeat {
 }
 
 impl Print for Assign {
-	fn print(&self, printer: &mut LuaJITPrinter, out: &mut dyn Write) -> Result<()> {
+	fn print(&self, printer: &mut LuaNoFFIPrinter, out: &mut dyn Write) -> Result<()> {
 		let Self {
 			destination,
 			source,
@@ -256,7 +268,7 @@ impl Print for Assign {
 }
 
 impl Print for SwapAll {
-	fn print(&self, printer: &mut LuaJITPrinter, out: &mut dyn Write) -> Result<()> {
+	fn print(&self, printer: &mut LuaNoFFIPrinter, out: &mut dyn Write) -> Result<()> {
 		let Self { locals } = self;
 
 		for pair in locals.windows(2) {
@@ -284,7 +296,7 @@ impl Print for SwapAll {
 }
 
 impl Print for Call {
-	fn print(&self, printer: &mut LuaJITPrinter, out: &mut dyn Write) -> Result<()> {
+	fn print(&self, printer: &mut LuaNoFFIPrinter, out: &mut dyn Write) -> Result<()> {
 		let Self {
 			function,
 			results,
@@ -310,7 +322,7 @@ impl Print for Call {
 }
 
 impl Print for GlobalSet {
-	fn print(&self, printer: &mut LuaJITPrinter, out: &mut dyn Write) -> Result<()> {
+	fn print(&self, printer: &mut LuaNoFFIPrinter, out: &mut dyn Write) -> Result<()> {
 		let Self {
 			destination,
 			source,
@@ -328,7 +340,7 @@ impl Print for GlobalSet {
 }
 
 impl Print for TableSet {
-	fn print(&self, printer: &mut LuaJITPrinter, out: &mut dyn Write) -> Result<()> {
+	fn print(&self, printer: &mut LuaNoFFIPrinter, out: &mut dyn Write) -> Result<()> {
 		let Self {
 			destination,
 			source,
@@ -350,7 +362,7 @@ impl Print for TableSet {
 }
 
 impl Print for TableFill {
-	fn print(&self, printer: &mut LuaJITPrinter, out: &mut dyn Write) -> Result<()> {
+	fn print(&self, printer: &mut LuaNoFFIPrinter, out: &mut dyn Write) -> Result<()> {
 		let Self {
 			destination,
 			source,
@@ -377,7 +389,7 @@ impl Print for TableFill {
 }
 
 impl Print for TableCopy {
-	fn print(&self, printer: &mut LuaJITPrinter, out: &mut dyn Write) -> Result<()> {
+	fn print(&self, printer: &mut LuaNoFFIPrinter, out: &mut dyn Write) -> Result<()> {
 		let Self {
 			destination,
 			source,
@@ -404,7 +416,7 @@ impl Print for TableCopy {
 }
 
 impl Print for TableDrop {
-	fn print(&self, printer: &mut LuaJITPrinter, out: &mut dyn Write) -> Result<()> {
+	fn print(&self, printer: &mut LuaNoFFIPrinter, out: &mut dyn Write) -> Result<()> {
 		let Self { source } = self;
 
 		let intrinsic = self.needs_name();
@@ -419,7 +431,7 @@ impl Print for TableDrop {
 }
 
 impl Print for MemoryStore {
-	fn print(&self, printer: &mut LuaJITPrinter, out: &mut dyn Write) -> Result<()> {
+	fn print(&self, printer: &mut LuaNoFFIPrinter, out: &mut dyn Write) -> Result<()> {
 		let Self {
 			destination,
 			source,
@@ -442,7 +454,7 @@ impl Print for MemoryStore {
 }
 
 impl Print for MemoryFill {
-	fn print(&self, printer: &mut LuaJITPrinter, out: &mut dyn Write) -> Result<()> {
+	fn print(&self, printer: &mut LuaNoFFIPrinter, out: &mut dyn Write) -> Result<()> {
 		let Self {
 			destination,
 			byte,
@@ -469,7 +481,7 @@ impl Print for MemoryFill {
 }
 
 impl Print for MemoryCopy {
-	fn print(&self, printer: &mut LuaJITPrinter, out: &mut dyn Write) -> Result<()> {
+	fn print(&self, printer: &mut LuaNoFFIPrinter, out: &mut dyn Write) -> Result<()> {
 		let Self {
 			destination,
 			source,
@@ -496,7 +508,7 @@ impl Print for MemoryCopy {
 }
 
 impl Print for MemoryDrop {
-	fn print(&self, printer: &mut LuaJITPrinter, out: &mut dyn Write) -> Result<()> {
+	fn print(&self, printer: &mut LuaNoFFIPrinter, out: &mut dyn Write) -> Result<()> {
 		let Self { source } = self;
 
 		let intrinsic = self.needs_name();
@@ -511,7 +523,7 @@ impl Print for MemoryDrop {
 }
 
 impl Print for Statement {
-	fn print(&self, printer: &mut LuaJITPrinter, out: &mut dyn Write) -> Result<()> {
+	fn print(&self, printer: &mut LuaNoFFIPrinter, out: &mut dyn Write) -> Result<()> {
 		match self {
 			Self::Match(inner) => inner.print(printer, out),
 			Self::Repeat(repeat) => repeat.print(printer, out),
@@ -532,7 +544,7 @@ impl Print for Statement {
 }
 
 impl Print for Sequence {
-	fn print(&self, printer: &mut LuaJITPrinter, out: &mut dyn Write) -> Result<()> {
+	fn print(&self, printer: &mut LuaNoFFIPrinter, out: &mut dyn Write) -> Result<()> {
 		self.list
 			.iter()
 			.try_for_each(|statement| statement.print(printer, out))
@@ -540,7 +552,7 @@ impl Print for Sequence {
 }
 
 impl Print for Export {
-	fn print(&self, printer: &mut LuaJITPrinter, out: &mut dyn Write) -> Result<()> {
+	fn print(&self, printer: &mut LuaNoFFIPrinter, out: &mut dyn Write) -> Result<()> {
 		let Self { identifier, source } = self;
 
 		write!(out, "[\"{}\"] = ", identifier.as_bytes().escape_ascii())?;
@@ -551,7 +563,7 @@ impl Print for Export {
 
 fn fmt_export_list(
 	exports: &[Export],
-	printer: &mut LuaJITPrinter,
+	printer: &mut LuaNoFFIPrinter,
 	out: &mut dyn Write,
 ) -> Result<()> {
 	printer.tab(out)?;
@@ -572,8 +584,8 @@ fn fmt_export_list(
 	writeln!(out, "}}")
 }
 
-impl Print for LuaJITTree {
-	fn print(&self, printer: &mut LuaJITPrinter, out: &mut dyn Write) -> Result<()> {
+impl Print for LuaNoFFITree {
+	fn print(&self, printer: &mut LuaNoFFIPrinter, out: &mut dyn Write) -> Result<()> {
 		let Self {
 			environment,
 			locals,
@@ -581,6 +593,23 @@ impl Print for LuaJITTree {
 			code,
 			exports,
 		} = self;
+
+		if !printer.runtime_names().is_empty() {
+			printer.tab(out)?;
+			writeln!(out, "local runtime = {{")?;
+			printer.indent();
+
+			for &name in printer.runtime_names() {
+				let binding = runtime_binding_name(name);
+
+				printer.tab(out)?;
+				writeln!(out, "{binding} = {binding},")?;
+			}
+
+			printer.outdent();
+			printer.tab(out)?;
+			writeln!(out, "}}\n")?;
+		}
 
 		printer.tab(out)?;
 		write!(out, "local function module(")?;
@@ -594,8 +623,35 @@ impl Print for LuaJITTree {
 		printer.tab(out)?;
 		writeln!(out, "local excess_stack = {{ top = 0 }}")?;
 
+		let table_backed_locals = use_table_backed_module_locals(printer, locals);
+
+		for &name in printer.runtime_names() {
+			let binding = runtime_binding_name(name);
+
+			printer.tab(out)?;
+			writeln!(out, "local {binding} = runtime.{binding}")?;
+		}
+
 		fmt_stack_enter(*stack, printer, out)?;
-		fmt_locals(locals, printer, out)?;
+
+		if table_backed_locals {
+			printer.tab(out)?;
+			writeln!(out, "local module_locals = {{}}")?;
+			printer.tab(out)?;
+			writeln!(out, "for i = 1, {} do", locals.len())?;
+			printer.indent();
+			printer.tab(out)?;
+			writeln!(out, "module_locals[i] = 0")?;
+			printer.outdent();
+			printer.tab(out)?;
+			writeln!(out, "end")?;
+
+			for (index, &name) in locals.iter().enumerate() {
+				printer.set_exact_name(name, alloc::format!("module_locals[{}]", index + 1).into());
+			}
+		} else {
+			fmt_locals(locals, printer, out)?;
+		}
 
 		code.print(printer, out)?;
 
@@ -604,6 +660,10 @@ impl Print for LuaJITTree {
 
 		printer.tab(out)?;
 		writeln!(out, "return export")?;
+
+		if table_backed_locals {
+			printer.clear_exact_names();
+		}
 
 		printer.outdent();
 

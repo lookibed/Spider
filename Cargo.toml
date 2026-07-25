@@ -8,7 +8,10 @@ members = [
 	"Targets/Json",
 	"Targets/Luau/*",
 	"Targets/LuaJIT/*",
+	"Targets/LuaNoFFI/*",
 	"CLI",
+	"Tools/*",
+	"tests/manual/self-hosting-luanoffi-builder",
 ]
 
 [workspace.dependencies]

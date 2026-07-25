@@ -41,6 +41,7 @@ fn print_graph(graph: &DataFlowGraph, target: Target) {
 		Target::Json => targets::into_json(graph, &mut output),
 		Target::Luau => targets::into_luau(graph, &mut output),
 		Target::LuaJIT => targets::into_luajit(graph, &mut output),
+		Target::LuaNoFFI => targets::into_luanoffi(graph, &mut output),
 	}
 
 	output.flush().expect("output should print");

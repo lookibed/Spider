@@ -1,4 +1,4 @@
-//! Prints `LuaJIT` trees.
+//! Prints `LuaNoFFI` trees.
 
 extern crate alloc;
 
@@ -13,25 +13,27 @@ use alloc::sync::Arc;
 use std::io::{Result, Write};
 
 use hashbrown::HashMap;
-use luajit_tree::{LuaJITTree, expression::Name};
+use luanoffi_tree::{LuaNoFFITree, expression::Name};
 
 use self::print::Print as _;
 
-/// Prints a `LuaJIT` tree into a writer.
-pub struct LuaJITPrinter {
+/// Prints a `LuaNoFFI` tree into a writer.
+pub struct LuaNoFFIPrinter {
 	names: HashMap<Name, Arc<str>>,
 	exact_names: HashMap<Name, Arc<str>>,
 	depth: u16,
+	runtime_names: Vec<&'static str>,
 }
 
-impl LuaJITPrinter {
-	/// Creates a new `LuaJITPrinter`.
+impl LuaNoFFIPrinter {
+	/// Creates a new `LuaNoFFIPrinter`.
 	#[must_use]
 	pub fn new() -> Self {
 		Self {
 			names: HashMap::new(),
 			exact_names: HashMap::new(),
 			depth: 0,
+			runtime_names: Vec::new(),
 		}
 	}
 
@@ -64,6 +66,11 @@ impl LuaJITPrinter {
 		self.exact_names.remove(&name)
 	}
 
+	/// Removes all exact printed names.
+	pub fn clear_exact_names(&mut self) {
+		self.exact_names.clear();
+	}
+
 	/// Increases the indentation level by one.
 	pub const fn indent(&mut self) {
 		self.depth = self.depth.wrapping_add(1);
@@ -74,17 +81,29 @@ impl LuaJITPrinter {
 		self.depth = self.depth.wrapping_sub(1);
 	}
 
+	/// Replaces the runtime helper list used while printing the tree.
+	pub fn set_runtime_names(&mut self, mut runtime_names: Vec<&'static str>) {
+		runtime_names.sort_unstable();
+		runtime_names.dedup();
+		self.runtime_names = runtime_names;
+	}
+
+	/// Returns the runtime helper section names directly referenced by the tree.
+	pub fn runtime_names(&self) -> &[&'static str] {
+		&self.runtime_names
+	}
+
 	/// Prints the tree into the writer.
 	///
 	/// # Errors
 	///
 	/// Returns any IO errors that the `out` produces during the process.
-	pub fn print(&mut self, tree: &LuaJITTree, out: &mut dyn Write) -> Result<()> {
+	pub fn print(&mut self, tree: &LuaNoFFITree, out: &mut dyn Write) -> Result<()> {
 		tree.print(self, out)
 	}
 }
 
-impl Default for LuaJITPrinter {
+impl Default for LuaNoFFIPrinter {
 	fn default() -> Self {
 		Self::new()
 	}

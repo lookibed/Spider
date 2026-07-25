@@ -1,0 +1,12 @@
+[package]
+name = "luanoffi-printer"
+version = "1.0.0"
+edition = "2024"
+
+[lints]
+workspace = true
+
+[dependencies]
+luanoffi-tree = { path = "../Tree" }
+
+hashbrown.workspace = true

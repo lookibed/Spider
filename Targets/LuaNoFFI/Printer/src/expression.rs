@@ -1,7 +1,7 @@
 use alloc::{format, sync::Arc};
 use std::io::{Result, Write};
 
-use luajit_tree::expression::{
+use luanoffi_tree::expression::{
 	BooleanToInteger, Call, Expression, Function, GlobalGet, GlobalNew, Import,
 	IntegerBinaryOperation, IntegerCompareOperation, IntegerConvertToNumber, IntegerExtend,
 	IntegerNarrow, IntegerTransmuteToNumber, IntegerUnaryOperation, IntegerWiden, Local, Location,
@@ -9,15 +9,15 @@ use luajit_tree::expression::{
 	NumberCompareOperation, NumberNarrow, NumberTransmuteToInteger, NumberTruncateToInteger,
 	NumberUnaryOperation, NumberWiden, RefIsNull, Scoped, TableGet, TableGrow, TableNew, TableSize,
 };
-use luajit_tree::statement::Statement;
+use luanoffi_tree::statement::Statement;
 
-use crate::{LuaJITPrinter, library::NeedsName as _, print::Print};
+use crate::{LuaNoFFIPrinter, library::NeedsName as _, print::Print};
 
 const PACKED_SCOPED_DEPENDENCIES_THRESHOLD: usize = 48;
 const PACKED_SCOPED_DEPENDENCIES_NAME: &str = "__spider_scoped_dependencies";
 const PACKED_SCOPED_DEPENDENCY_ARGUMENT_PREFIX: &str = "__spider_scoped_dependency_";
 
-pub fn fmt_delimited<T, I>(items: I, printer: &mut LuaJITPrinter, out: &mut dyn Write) -> Result<()>
+pub fn fmt_delimited<T, I>(items: I, printer: &mut LuaNoFFIPrinter, out: &mut dyn Write) -> Result<()>
 where
 	T: Print,
 	I: IntoIterator<Item = T>,
@@ -36,7 +36,7 @@ where
 	}
 }
 
-pub fn fmt_stack_enter(size: u16, printer: &LuaJITPrinter, out: &mut dyn Write) -> Result<()> {
+pub fn fmt_stack_enter(size: u16, printer: &LuaNoFFIPrinter, out: &mut dyn Write) -> Result<()> {
 	if size == 0 {
 		return Ok(());
 	}
@@ -48,7 +48,7 @@ pub fn fmt_stack_enter(size: u16, printer: &LuaJITPrinter, out: &mut dyn Write) 
 	writeln!(out, "excess_stack.top = stack_top")
 }
 
-pub fn fmt_stack_leave(size: u16, printer: &LuaJITPrinter, out: &mut dyn Write) -> Result<()> {
+pub fn fmt_stack_leave(size: u16, printer: &LuaNoFFIPrinter, out: &mut dyn Write) -> Result<()> {
 	if size == 0 {
 		return Ok(());
 	}
@@ -60,7 +60,7 @@ pub fn fmt_stack_leave(size: u16, printer: &LuaJITPrinter, out: &mut dyn Write) 
 fn print_function_body(
 	function: &Function,
 	dependency_bindings: Option<&[(Name, usize)]>,
-	printer: &mut LuaJITPrinter,
+	printer: &mut LuaNoFFIPrinter,
 	out: &mut dyn Write,
 ) -> Result<()> {
 	let Function {
@@ -150,7 +150,7 @@ fn print_function_body(
 }
 
 impl Print for Name {
-	fn print(&self, printer: &mut LuaJITPrinter, out: &mut dyn Write) -> Result<()> {
+	fn print(&self, printer: &mut LuaNoFFIPrinter, out: &mut dyn Write) -> Result<()> {
 		if let Some(exact) = printer.get_exact_name(*self) {
 			return write!(out, "{exact}");
 		}
@@ -162,7 +162,7 @@ impl Print for Name {
 	}
 }
 
-pub fn fmt_locals(names: &[Name], printer: &mut LuaJITPrinter, out: &mut dyn Write) -> Result<()> {
+pub fn fmt_locals(names: &[Name], printer: &mut LuaNoFFIPrinter, out: &mut dyn Write) -> Result<()> {
 	if names.is_empty() {
 		return Ok(());
 	}
@@ -170,13 +170,23 @@ pub fn fmt_locals(names: &[Name], printer: &mut LuaJITPrinter, out: &mut dyn Wri
 	printer.tab(out)?;
 	write!(out, "local ")?;
 
-	fmt_delimited(names, printer, out)?;
+	fmt_delimited(names.iter().copied(), printer, out)?;
+
+	write!(out, " = ")?;
+
+	for (index, _) in names.iter().enumerate() {
+		if index != 0 {
+			write!(out, ", ")?;
+		}
+
+		write!(out, "0")?;
+	}
 
 	writeln!(out)
 }
 
 impl Print for Local {
-	fn print(&self, printer: &mut LuaJITPrinter, out: &mut dyn Write) -> Result<()> {
+	fn print(&self, printer: &mut LuaNoFFIPrinter, out: &mut dyn Write) -> Result<()> {
 		match self {
 			Self::Fast { name } => name.print(printer, out),
 			Self::Slow { offset } => {
@@ -187,7 +197,7 @@ impl Print for Local {
 }
 
 impl Print for Function {
-	fn print(&self, printer: &mut LuaJITPrinter, out: &mut dyn Write) -> Result<()> {
+	fn print(&self, printer: &mut LuaNoFFIPrinter, out: &mut dyn Write) -> Result<()> {
 		let Self {
 			arguments,
 			..
@@ -210,7 +220,7 @@ impl Print for Function {
 }
 
 impl Print for Scoped {
-	fn print(&self, printer: &mut LuaJITPrinter, out: &mut dyn Write) -> Result<()> {
+	fn print(&self, printer: &mut LuaNoFFIPrinter, out: &mut dyn Write) -> Result<()> {
 		let Self {
 			dependencies,
 			function,
@@ -304,7 +314,7 @@ impl Print for Scoped {
 }
 
 impl Print for Import {
-	fn print(&self, printer: &mut LuaJITPrinter, out: &mut dyn Write) -> Result<()> {
+	fn print(&self, printer: &mut LuaNoFFIPrinter, out: &mut dyn Write) -> Result<()> {
 		let Self {
 			environment,
 			namespace,
@@ -326,35 +336,46 @@ impl Print for Import {
 }
 
 impl Print for i32 {
-	fn print(&self, _printer: &mut LuaJITPrinter, out: &mut dyn Write) -> Result<()> {
+	fn print(&self, _printer: &mut LuaNoFFIPrinter, out: &mut dyn Write) -> Result<()> {
 		write!(out, "{self}")
 	}
 }
 
 impl Print for i64 {
-	fn print(&self, _printer: &mut LuaJITPrinter, out: &mut dyn Write) -> Result<()> {
-		write!(out, "{self}LL")
+	fn print(&self, _printer: &mut LuaNoFFIPrinter, out: &mut dyn Write) -> Result<()> {
+		let bits = u64::from_ne_bytes(self.to_ne_bytes());
+		let lo = bits & 0xFFFF_FFFF;
+		let hi = bits >> 32;
+
+		write!(out, "into_bits_i64({lo}, {hi})")
 	}
 }
 
 impl Print for f32 {
-	fn print(&self, _printer: &mut LuaJITPrinter, out: &mut dyn Write) -> Result<()> {
-		let bits = i32::from_ne_bytes(self.to_ne_bytes());
+	fn print(&self, _printer: &mut LuaNoFFIPrinter, out: &mut dyn Write) -> Result<()> {
+		let bits = u32::from_ne_bytes(self.to_ne_bytes());
+		let bits = if bits >= 0x8000_0000 {
+			i64::from(bits) - 0x1_0000_0000
+		} else {
+			i64::from(bits)
+		};
 
 		write!(out, "{bits} --[[ {self}_f32 ]]")
 	}
 }
 
 impl Print for f64 {
-	fn print(&self, _printer: &mut LuaJITPrinter, out: &mut dyn Write) -> Result<()> {
-		let bits = i64::from_ne_bytes(self.to_ne_bytes());
+	fn print(&self, _printer: &mut LuaNoFFIPrinter, out: &mut dyn Write) -> Result<()> {
+		let bits = u64::from_ne_bytes(self.to_ne_bytes());
+		let lo = bits & 0xFFFF_FFFF;
+		let hi = bits >> 32;
 
-		write!(out, "{bits}LL --[[ {self}_f64 ]]")
+		write!(out, "from_bits_f64({lo}, {hi}) --[[ {self}_f64 ]]")
 	}
 }
 
 impl Print for Call {
-	fn print(&self, printer: &mut LuaJITPrinter, out: &mut dyn Write) -> Result<()> {
+	fn print(&self, printer: &mut LuaNoFFIPrinter, out: &mut dyn Write) -> Result<()> {
 		let Self {
 			function,
 			arguments,
@@ -371,7 +392,7 @@ impl Print for Call {
 }
 
 impl Print for BooleanToInteger {
-	fn print(&self, printer: &mut LuaJITPrinter, out: &mut dyn Write) -> Result<()> {
+	fn print(&self, printer: &mut LuaNoFFIPrinter, out: &mut dyn Write) -> Result<()> {
 		let Self { source } = self;
 
 		write!(out, "(")?;
@@ -383,7 +404,7 @@ impl Print for BooleanToInteger {
 }
 
 impl Print for RefIsNull {
-	fn print(&self, printer: &mut LuaJITPrinter, out: &mut dyn Write) -> Result<()> {
+	fn print(&self, printer: &mut LuaNoFFIPrinter, out: &mut dyn Write) -> Result<()> {
 		let Self { source } = self;
 
 		write!(out, "(")?;
@@ -395,7 +416,7 @@ impl Print for RefIsNull {
 }
 
 impl Print for IntegerUnaryOperation {
-	fn print(&self, printer: &mut LuaJITPrinter, out: &mut dyn Write) -> Result<()> {
+	fn print(&self, printer: &mut LuaNoFFIPrinter, out: &mut dyn Write) -> Result<()> {
 		let Self { source, .. } = self;
 
 		let intrinsic = self.needs_name();
@@ -409,7 +430,7 @@ impl Print for IntegerUnaryOperation {
 }
 
 impl Print for IntegerBinaryOperation {
-	fn print(&self, printer: &mut LuaJITPrinter, out: &mut dyn Write) -> Result<()> {
+	fn print(&self, printer: &mut LuaNoFFIPrinter, out: &mut dyn Write) -> Result<()> {
 		let Self { lhs, rhs, .. } = self;
 
 		let intrinsic = self.needs_name();
@@ -427,7 +448,7 @@ impl Print for IntegerBinaryOperation {
 }
 
 impl Print for IntegerCompareOperation {
-	fn print(&self, printer: &mut LuaJITPrinter, out: &mut dyn Write) -> Result<()> {
+	fn print(&self, printer: &mut LuaNoFFIPrinter, out: &mut dyn Write) -> Result<()> {
 		let Self { lhs, rhs, .. } = self;
 
 		let intrinsic = self.needs_name();
@@ -445,7 +466,7 @@ impl Print for IntegerCompareOperation {
 }
 
 impl Print for IntegerNarrow {
-	fn print(&self, printer: &mut LuaJITPrinter, out: &mut dyn Write) -> Result<()> {
+	fn print(&self, printer: &mut LuaNoFFIPrinter, out: &mut dyn Write) -> Result<()> {
 		let Self { source } = self;
 
 		let intrinsic = self.needs_name();
@@ -459,7 +480,7 @@ impl Print for IntegerNarrow {
 }
 
 impl Print for IntegerWiden {
-	fn print(&self, printer: &mut LuaJITPrinter, out: &mut dyn Write) -> Result<()> {
+	fn print(&self, printer: &mut LuaNoFFIPrinter, out: &mut dyn Write) -> Result<()> {
 		let Self { source } = self;
 
 		let intrinsic = self.needs_name();
@@ -473,7 +494,7 @@ impl Print for IntegerWiden {
 }
 
 impl Print for IntegerExtend {
-	fn print(&self, printer: &mut LuaJITPrinter, out: &mut dyn Write) -> Result<()> {
+	fn print(&self, printer: &mut LuaNoFFIPrinter, out: &mut dyn Write) -> Result<()> {
 		let Self { source, .. } = self;
 
 		let intrinsic = self.needs_name();
@@ -487,7 +508,7 @@ impl Print for IntegerExtend {
 }
 
 impl Print for IntegerConvertToNumber {
-	fn print(&self, printer: &mut LuaJITPrinter, out: &mut dyn Write) -> Result<()> {
+	fn print(&self, printer: &mut LuaNoFFIPrinter, out: &mut dyn Write) -> Result<()> {
 		let Self { source, .. } = self;
 
 		let intrinsic = self.needs_name();
@@ -501,7 +522,7 @@ impl Print for IntegerConvertToNumber {
 }
 
 impl Print for IntegerTransmuteToNumber {
-	fn print(&self, printer: &mut LuaJITPrinter, out: &mut dyn Write) -> Result<()> {
+	fn print(&self, printer: &mut LuaNoFFIPrinter, out: &mut dyn Write) -> Result<()> {
 		let Self { source, .. } = self;
 
 		let intrinsic = self.needs_name();
@@ -515,7 +536,7 @@ impl Print for IntegerTransmuteToNumber {
 }
 
 impl Print for NumberUnaryOperation {
-	fn print(&self, printer: &mut LuaJITPrinter, out: &mut dyn Write) -> Result<()> {
+	fn print(&self, printer: &mut LuaNoFFIPrinter, out: &mut dyn Write) -> Result<()> {
 		let Self { source, .. } = self;
 
 		let intrinsic = self.needs_name();
@@ -529,7 +550,7 @@ impl Print for NumberUnaryOperation {
 }
 
 impl Print for NumberBinaryOperation {
-	fn print(&self, printer: &mut LuaJITPrinter, out: &mut dyn Write) -> Result<()> {
+	fn print(&self, printer: &mut LuaNoFFIPrinter, out: &mut dyn Write) -> Result<()> {
 		let Self { lhs, rhs, .. } = self;
 
 		let intrinsic = self.needs_name();
@@ -547,7 +568,7 @@ impl Print for NumberBinaryOperation {
 }
 
 impl Print for NumberCompareOperation {
-	fn print(&self, printer: &mut LuaJITPrinter, out: &mut dyn Write) -> Result<()> {
+	fn print(&self, printer: &mut LuaNoFFIPrinter, out: &mut dyn Write) -> Result<()> {
 		let Self { lhs, rhs, .. } = self;
 
 		let intrinsic = self.needs_name();
@@ -565,7 +586,7 @@ impl Print for NumberCompareOperation {
 }
 
 impl Print for NumberNarrow {
-	fn print(&self, printer: &mut LuaJITPrinter, out: &mut dyn Write) -> Result<()> {
+	fn print(&self, printer: &mut LuaNoFFIPrinter, out: &mut dyn Write) -> Result<()> {
 		let Self { source } = self;
 
 		let intrinsic = self.needs_name();
@@ -579,7 +600,7 @@ impl Print for NumberNarrow {
 }
 
 impl Print for NumberWiden {
-	fn print(&self, printer: &mut LuaJITPrinter, out: &mut dyn Write) -> Result<()> {
+	fn print(&self, printer: &mut LuaNoFFIPrinter, out: &mut dyn Write) -> Result<()> {
 		let Self { source } = self;
 
 		let intrinsic = self.needs_name();
@@ -593,7 +614,7 @@ impl Print for NumberWiden {
 }
 
 impl Print for NumberTruncateToInteger {
-	fn print(&self, printer: &mut LuaJITPrinter, out: &mut dyn Write) -> Result<()> {
+	fn print(&self, printer: &mut LuaNoFFIPrinter, out: &mut dyn Write) -> Result<()> {
 		let Self { source, .. } = self;
 
 		let intrinsic = self.needs_name();
@@ -607,7 +628,7 @@ impl Print for NumberTruncateToInteger {
 }
 
 impl Print for NumberTransmuteToInteger {
-	fn print(&self, printer: &mut LuaJITPrinter, out: &mut dyn Write) -> Result<()> {
+	fn print(&self, printer: &mut LuaNoFFIPrinter, out: &mut dyn Write) -> Result<()> {
 		let Self { source, .. } = self;
 
 		let intrinsic = self.needs_name();
@@ -621,7 +642,7 @@ impl Print for NumberTransmuteToInteger {
 }
 
 impl Print for Location {
-	fn print(&self, printer: &mut LuaJITPrinter, out: &mut dyn Write) -> Result<()> {
+	fn print(&self, printer: &mut LuaNoFFIPrinter, out: &mut dyn Write) -> Result<()> {
 		let Self { reference, offset } = self;
 
 		reference.print(printer, out)?;
@@ -633,7 +654,7 @@ impl Print for Location {
 }
 
 impl Print for GlobalNew {
-	fn print(&self, printer: &mut LuaJITPrinter, out: &mut dyn Write) -> Result<()> {
+	fn print(&self, printer: &mut LuaNoFFIPrinter, out: &mut dyn Write) -> Result<()> {
 		let Self { initializer } = self;
 
 		write!(out, "{{ ")?;
@@ -645,7 +666,7 @@ impl Print for GlobalNew {
 }
 
 impl Print for GlobalGet {
-	fn print(&self, printer: &mut LuaJITPrinter, out: &mut dyn Write) -> Result<()> {
+	fn print(&self, printer: &mut LuaNoFFIPrinter, out: &mut dyn Write) -> Result<()> {
 		let Self { source } = self;
 
 		source.print(printer, out)?;
@@ -655,7 +676,7 @@ impl Print for GlobalGet {
 }
 
 impl Print for TableNew {
-	fn print(&self, printer: &mut LuaJITPrinter, out: &mut dyn Write) -> Result<()> {
+	fn print(&self, printer: &mut LuaNoFFIPrinter, out: &mut dyn Write) -> Result<()> {
 		let Self {
 			initializer,
 			minimum,
@@ -679,7 +700,7 @@ impl Print for TableNew {
 }
 
 impl Print for TableGet {
-	fn print(&self, printer: &mut LuaJITPrinter, out: &mut dyn Write) -> Result<()> {
+	fn print(&self, printer: &mut LuaNoFFIPrinter, out: &mut dyn Write) -> Result<()> {
 		let Self { source } = self;
 
 		let intrinsic = self.needs_name();
@@ -693,7 +714,7 @@ impl Print for TableGet {
 }
 
 impl Print for TableSize {
-	fn print(&self, printer: &mut LuaJITPrinter, out: &mut dyn Write) -> Result<()> {
+	fn print(&self, printer: &mut LuaNoFFIPrinter, out: &mut dyn Write) -> Result<()> {
 		let Self { source } = self;
 
 		source.print(printer, out)?;
@@ -703,7 +724,7 @@ impl Print for TableSize {
 }
 
 impl Print for TableGrow {
-	fn print(&self, printer: &mut LuaJITPrinter, out: &mut dyn Write) -> Result<()> {
+	fn print(&self, printer: &mut LuaNoFFIPrinter, out: &mut dyn Write) -> Result<()> {
 		let Self {
 			destination,
 			initializer,
@@ -729,7 +750,7 @@ impl Print for TableGrow {
 }
 
 impl Print for MemoryNew {
-	fn print(&self, _printer: &mut LuaJITPrinter, out: &mut dyn Write) -> Result<()> {
+	fn print(&self, _printer: &mut LuaNoFFIPrinter, out: &mut dyn Write) -> Result<()> {
 		let Self {
 			initializer,
 			minimum,
@@ -749,7 +770,7 @@ impl Print for MemoryNew {
 }
 
 impl Print for MemoryLoad {
-	fn print(&self, printer: &mut LuaJITPrinter, out: &mut dyn Write) -> Result<()> {
+	fn print(&self, printer: &mut LuaNoFFIPrinter, out: &mut dyn Write) -> Result<()> {
 		let Self { source, .. } = self;
 
 		let intrinsic = self.needs_name();
@@ -763,7 +784,7 @@ impl Print for MemoryLoad {
 }
 
 impl Print for MemorySize {
-	fn print(&self, printer: &mut LuaJITPrinter, out: &mut dyn Write) -> Result<()> {
+	fn print(&self, printer: &mut LuaNoFFIPrinter, out: &mut dyn Write) -> Result<()> {
 		let Self { source } = self;
 
 		let intrinsic = self.needs_name();
@@ -777,7 +798,7 @@ impl Print for MemorySize {
 }
 
 impl Print for MemoryGrow {
-	fn print(&self, printer: &mut LuaJITPrinter, out: &mut dyn Write) -> Result<()> {
+	fn print(&self, printer: &mut LuaNoFFIPrinter, out: &mut dyn Write) -> Result<()> {
 		let Self { destination, size } = self;
 
 		let intrinsic = self.needs_name();
@@ -795,7 +816,7 @@ impl Print for MemoryGrow {
 }
 
 impl Print for Expression {
-	fn print(&self, printer: &mut LuaJITPrinter, out: &mut dyn Write) -> Result<()> {
+	fn print(&self, printer: &mut LuaNoFFIPrinter, out: &mut dyn Write) -> Result<()> {
 		match self {
 			Self::Function(function) => function.print(printer, out),
 			Self::Scoped(scoped) => scoped.print(printer, out),
