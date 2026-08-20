@@ -20,12 +20,12 @@ Full numbers live in [docs/notes/lua-no-ffi-measurements.md](docs/notes/lua-no-f
 
 | Fixture | Workload | Wasmtime | `lua-no-ffi` | `lua-jit` / host note | Size signal |
 | --- | --- | ---: | ---: | ---: | --- |
-| `real-world-binjgb` | canonical `frame_limit = 16` | `486.18 ms` | `4091.13 ms` | see full measurements | see full size table |
-| `real-world-binjgb-host-all` | `--all-frames 16` | `188.04 ms` | `10707.79 ms` | see full measurements | host workflow row in full table |
-| `real-world-plmpeg-host-all` | `--all-frames 12` on canonical sample | see full measurements | see full measurements | compare against `plmpeg-stream` in full table | host comparison lives in measurements |
-| `real-world-plmpeg-stream-host-all` | `--all-frames 12` streaming path | see full measurements | see full measurements | compare against non-stream host path | host comparison lives in measurements |
-| `real-world-h264bsd-mp4` | canonical MP4 probe set | see full measurements | see full measurements | control target in full table | see full size table |
-| `real-world-libjpeg-turbo-mjpeg` | canonical MJPEG probe set / host-all | see full measurements | see full measurements | control target in full table | see full size table |
+| `real-world-binjgb` | canonical `frame_limit = 16` | `486.18 ms` | `4091.13 ms` | `lua-jit`: full details in measurements | `.wasm`: `134,905 B`, Lua: `1,576,674 B` |
+| `real-world-binjgb-host-all` | `--all-frames 16` | `188.04 ms` | `10707.79 ms` | host-only row, no `lua-jit` number | host workflow row in full table |
+| `real-world-plmpeg-host-all` | `--all-frames 12` on canonical sample | `66.33 ms` | `1800.14 ms` | compare against `plmpeg-stream` below | host comparison lives in measurements |
+| `real-world-plmpeg-stream-host-all` | `--all-frames 12` streaming path | `40.38 ms` | `1168.06 ms` | sequential stateful path | host comparison lives in measurements |
+| `real-world-h264bsd-mp4` | canonical MP4 probe set | `526.91 ms` | `7544.49 ms` | control target in full table | `.wasm`: `165,414 B`, Lua: `2,184,930 B` |
+| `real-world-libjpeg-turbo-mjpeg` | canonical MJPEG probe set / host-all | `102.57 ms` | `3845.82 ms` | host-all `12`: `92.18 ms` vs `870.81 ms` | `.wasm`: `375,047 B`, Lua: `3,678,957 B` |
 | `self-hosting-luanoffi-builder` | generated module snapshot | n/a | current generated `lua-no-ffi` loads past previous top-level blocker | `lua-jit` still has a deep upvalue case | `.wasm`: `165,494 B`, generated `lua-no-ffi`: `2,176,834 B` |
 
 This is not the full matrix. The complete runtime and size tables, including more fixtures and the detailed comparisons against the old path, are in [docs/notes/lua-no-ffi-measurements.md](docs/notes/lua-no-ffi-measurements.md).
