@@ -1,0 +1,17 @@
+[package]
+name = "gltf-rs-wasm"
+version = "0.1.0"
+edition = "2021"
+
+[workspace]
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+gltf = { version = "1.4", default-features = false, features = ["names"] }
+
+
+[profile.release]
+opt-level = "s"
+lto = true

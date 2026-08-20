@@ -18,6 +18,7 @@ enum FixtureKind {
     Binjgb,
     LibjpegTurboMjpeg,
     H264Mp4,
+    Cgltf,
 }
 
 #[derive(Clone, Copy, Eq, PartialEq)]
@@ -145,12 +146,16 @@ fn parse_args(args: Vec<OsString>) -> RunnerResult<Args> {
         }
     }
 
-    let parsed_mode = mode.ok_or_else(|| {
-        io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "missing required argument: --mode baseline|stream",
-        )
-    })?;
+    let parsed_mode = if fixture == FixtureKind::Cgltf {
+        RunnerMode::Baseline
+    } else {
+        mode.ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "missing required argument: --mode baseline|stream",
+            )
+        })?
+    };
     let parsed_wasm_path = wasm_path
         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "missing required argument: --wasm <path>"))?;
     let parsed_input_path = input_path
@@ -189,6 +194,7 @@ fn parse_fixture(fixture: &str) -> RunnerResult<FixtureKind> {
         "binjgb" | "gbc" => Ok(FixtureKind::Binjgb),
         "libjpeg-turbo-mjpeg" | "libjpegturbo-mjpeg" | "mjpeg" => Ok(FixtureKind::LibjpegTurboMjpeg),
         "h264mp4" => Ok(FixtureKind::H264Mp4),
+        "cgltf" => Ok(FixtureKind::Cgltf),
         _ => Err(io::Error::new(
             io::ErrorKind::InvalidInput,
             format!("unsupported fixture: {fixture}"),
@@ -221,6 +227,10 @@ fn print_help() {
 }
 
 fn run(args: Args) -> RunnerResult<Summary> {
+    if args.fixture == FixtureKind::Cgltf {
+        return run_cgltf(&args);
+    }
+
     let engine = Engine::default();
     let module = Module::from_file(&engine, &args.wasm_path)?;
     let mut store = Store::new(&engine, ());
@@ -368,6 +378,7 @@ fn load_exports(store: &mut Store<()>, instance: &Instance, fixture: FixtureKind
             host_stream_end: None,
             host_stream_get_frame_index: None,
         },
+        FixtureKind::Cgltf => unreachable!("cgltf is handled separately in run_cgltf"),
     };
 
     Ok(exports)
@@ -554,6 +565,7 @@ fn read_current_frame(store: &mut Store<()>, exports: &WasmExports, frame_index:
         FixtureKind::Plmpeg | FixtureKind::LibjpegTurboMjpeg => read_current_rgb_frame(store, exports, frame_index),
         FixtureKind::Binjgb => read_current_binjgb_frame(store, exports, frame_index),
         FixtureKind::H264Mp4 => read_current_h264_frame(store, exports, frame_index),
+        FixtureKind::Cgltf => unreachable!("cgltf uses run_cgltf, not read_current_frame"),
     }
 }
 
@@ -784,4 +796,114 @@ fn write_ppm_frame(
     bytes.extend_from_slice(rgb_bytes);
     fs::write(path, bytes)?;
     Ok(())
+}
+
+fn run_cgltf(args: &Args) -> RunnerResult<Summary> {
+    let engine = Engine::default();
+    let module = Module::from_file(&engine, &args.wasm_path)?;
+    let mut store = Store::new(&engine, ());
+    let instance = Instance::new(&mut store, &module, &[])?;
+    let memory = instance
+        .get_memory(&mut store, "memory")
+        .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "missing exported memory"))?;
+
+    let host_alloc: TypedFunc<i32, i32> = instance.get_typed_func(&mut store, "cgltf_host_alloc")?;
+    let host_load: TypedFunc<(i32, i32), i32> = instance.get_typed_func(&mut store, "cgltf_host_load")?;
+    let host_parse: TypedFunc<(), i32> = instance.get_typed_func(&mut store, "cgltf_host_parse")?;
+    let host_free: TypedFunc<(), i32> = instance.get_typed_func(&mut store, "cgltf_host_free")?;
+
+    let get_mesh_count: TypedFunc<(), i32> = instance.get_typed_func(&mut store, "cgltf_host_get_mesh_count")?;
+    let get_animation_count: TypedFunc<(), i32> = instance.get_typed_func(&mut store, "cgltf_host_get_animation_count")?;
+    let get_node_count: TypedFunc<(), i32> = instance.get_typed_func(&mut store, "cgltf_host_get_node_count")?;
+    let get_skin_count: TypedFunc<(), i32> = instance.get_typed_func(&mut store, "cgltf_host_get_skin_count")?;
+    let get_scene_count: TypedFunc<(), i32> = instance.get_typed_func(&mut store, "cgltf_host_get_scene_count")?;
+    let get_anim_chan_count: TypedFunc<i32, i32> = instance.get_typed_func(&mut store, "cgltf_host_get_animation_channel_count")?;
+    let get_node_has_mesh: TypedFunc<i32, i32> = instance.get_typed_func(&mut store, "cgltf_host_get_node_has_mesh")?;
+    let get_node_has_skin: TypedFunc<i32, i32> = instance.get_typed_func(&mut store, "cgltf_host_get_node_has_skin")?;
+
+    let _get_anim_name_len: TypedFunc<i32, i32> = instance.get_typed_func(&mut store, "cgltf_host_get_animation_name_len")?;
+    let _get_anim_name: TypedFunc<(i32, i32, i32), i32> = instance.get_typed_func(&mut store, "cgltf_host_get_animation_name")?;
+    let get_mesh_name_len: TypedFunc<i32, i32> = instance.get_typed_func(&mut store, "cgltf_host_get_mesh_name_len")?;
+    let get_mesh_name: TypedFunc<(i32, i32, i32), i32> = instance.get_typed_func(&mut store, "cgltf_host_get_mesh_name")?;
+    let get_node_name_len: TypedFunc<i32, i32> = instance.get_typed_func(&mut store, "cgltf_host_get_node_name_len")?;
+    let get_node_name: TypedFunc<(i32, i32, i32), i32> = instance.get_typed_func(&mut store, "cgltf_host_get_node_name")?;
+    let compute_hash: TypedFunc<(i32, i32), i32> = instance.get_typed_func(&mut store, "cgltf_compute_hash")?;
+
+    let input_bytes = fs::read(&args.input_path)?;
+    let size = i32::try_from(input_bytes.len())
+        .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "input file exceeds i32 range"))?;
+    let input_ptr = host_alloc.call(&mut store, size)?;
+    if input_ptr == 0 {
+        return Err(io::Error::other("input allocation failed").into());
+    }
+    let offset = usize::try_from(input_ptr)
+        .map_err(|_| io::Error::other("negative input pointer returned from wasm"))?;
+    memory.write(&mut store, offset, &input_bytes)?;
+    ensure_success(host_load.call(&mut store, (input_ptr, size))?, "host load failed")?;
+
+    let hash_value = compute_hash.call(&mut store, (input_ptr, size))?;
+    println!("Result (Hash): {hash_value}");
+
+    ensure_success(host_parse.call(&mut store, ())?, "host parse failed")?;
+
+    let mesh_count = get_mesh_count.call(&mut store, ())?;
+    let anim_count = get_animation_count.call(&mut store, ())?;
+    let node_count = get_node_count.call(&mut store, ())?;
+    let skin_count = get_skin_count.call(&mut store, ())?;
+    let scene_count = get_scene_count.call(&mut store, ())?;
+
+    println!("Result (MeshCount): {mesh_count}");
+    println!("Result (AnimationCount): {anim_count}");
+    println!("Result (NodeCount): {node_count}");
+    println!("Result (SkinCount): {skin_count}");
+    println!("Result (SceneCount): {scene_count}");
+
+    for i in 0i32..anim_count {
+        let channels = get_anim_chan_count.call(&mut store, i)?;
+        println!("Result (AnimationChannelCount{i}): {channels}");
+    }
+
+    for i in 0i32..mesh_count {
+        let name_len = get_mesh_name_len.call(&mut store, i)?;
+        if name_len > 0 {
+            let buf = host_alloc.call(&mut store, name_len + 1)?;
+            if buf != 0 {
+                get_mesh_name.call(&mut store, (i, buf, name_len + 1))?;
+                let buf_off = usize::try_from(buf).map_err(|_| io::Error::other("negative buffer pointer"))?;
+                let len = usize::try_from(name_len).map_err(|_| io::Error::other("negative name length"))?;
+                let mut name_bytes = vec![0u8; len];
+                memory.read(&mut store, buf_off, &mut name_bytes)?;
+                let name = String::from_utf8(name_bytes).unwrap_or_else(|_| String::from("<invalid utf8>"));
+                println!("Result (MeshName{i}): {name}");
+            }
+        }
+    }
+
+    for i in 0i32..node_count {
+        let name_len = get_node_name_len.call(&mut store, i)?;
+        let name = if name_len > 0 {
+            let buf = host_alloc.call(&mut store, name_len + 1)?;
+            if buf != 0 {
+                get_node_name.call(&mut store, (i, buf, name_len + 1))?;
+                let buf_off = usize::try_from(buf).map_err(|_| io::Error::other("negative buffer pointer"))?;
+                let len = usize::try_from(name_len).map_err(|_| io::Error::other("negative name length"))?;
+                let mut name_bytes = vec![0u8; len];
+                memory.read(&mut store, buf_off, &mut name_bytes)?;
+                String::from_utf8(name_bytes).unwrap_or_else(|_| String::from("<invalid utf8>"))
+            } else {
+                String::new()
+            }
+        } else {
+            String::new()
+        };
+        let has_mesh = get_node_has_mesh.call(&mut store, i)? == 1;
+        let has_skin = get_node_has_skin.call(&mut store, i)? == 1;
+        let mut flags = String::new();
+        if has_mesh { flags.push_str(" MESH"); }
+        if has_skin { flags.push_str(" SKIN"); }
+        println!("Result (Node{i}): {name}{flags}");
+    }
+
+    host_free.call(&mut store, ())?;
+    Ok(Summary { decoded_frames: 0, width: 0, height: 0, rgb_size: 0 })
 }

@@ -1,6 +1,46 @@
 -- SECTION buffer
 local buffer = {}
 
+-- SECTION buffer_meta
+local buffer_meta = {
+	__index = function(t, k)
+		if type(k) ~= "number" or k < 1 then
+			return nil
+		end
+
+		local dirty = rawget(t, "__d")
+
+		if dirty then
+			local v = rawget(dirty, k)
+
+			if v ~= nil then
+				return v
+			end
+		end
+
+		local s = rawget(t, "__s")
+
+		return string.byte(s, k)
+	end,
+	__newindex = function(t, k, v)
+		if type(k) ~= "number" or k < 1 then
+			return
+		end
+
+		local dirty = rawget(t, "__d")
+
+		if not dirty then
+			dirty = {}
+			rawset(t, "__d", dirty)
+		end
+
+		rawset(dirty, k, v)
+	end,
+	__len = function(t)
+		return #rawget(t, "__s")
+	end
+}
+
 -- SECTION transmute_buffer
 local TRANSMUTE_BUFFER = {}
 
@@ -10,15 +50,39 @@ local TRANSMUTE_N32 = {}
 -- SECTION transmute_n64
 local TRANSMUTE_N64 = {}
 
--- SECTION buffer_create
-local function buffer_create(size)
-	local tbl = {}
+-- SECTION ensure_dirty
+local function ensure_dirty(buf)
+	if not rawget(buf, "__d") then
+		rawset(buf, "__d", {})
+	end
+end
 
-	for i = 1, size do
-		tbl[i] = 0
+-- SECTION buffer_byte
+-- NEEDS buffer_create
+local function buffer_byte(buf, offset)
+	local dirty = rawget(buf, "__d")
+
+	if dirty then
+		local v = rawget(dirty, offset)
+
+		if v ~= nil then
+			return v
+		end
 	end
 
-	return tbl
+	local s = rawget(buf, "__s")
+
+	return string.byte(s, offset)
+end
+
+-- SECTION buffer_create
+-- NEEDS buffer_meta
+local function buffer_create(size)
+	local t = setmetatable({}, buffer_meta)
+
+	rawset(t, "__s", string.rep("\0", size))
+
+	return t
 end
 
 -- SECTION buffer_len
@@ -27,26 +91,27 @@ local function buffer_len(buf)
 end
 
 -- SECTION buffer_copy
-local function buffer_copy(dest, dest_offset, src, src_offset, size)
+-- NEEDS buffer_byte
+-- NEEDS ensure_dirty
+local function buffer_copy(dest, dest_offset, src, offset, size)
 	if size == 0 then
 		return
 	end
 
-	if dest == src and dest_offset > src_offset then
-		for i = size - 1, 0, -1 do
-			dest[dest_offset + i + 1] = src[src_offset + i + 1]
-		end
-
-		return
-	end
+	ensure_dirty(dest)
 
 	for i = 0, size - 1 do
-		dest[dest_offset + i + 1] = src[src_offset + i + 1]
+		local idx = offset + i + 1
+
+		dest[dest_offset + i + 1] = buffer_byte(src, idx)
 	end
 end
 
 -- SECTION buffer_fill
+-- NEEDS ensure_dirty
 local function buffer_fill(buf, offset, value, size)
+	ensure_dirty(buf)
+
 	value = value % 256
 
 	for i = 1, size do
@@ -55,8 +120,9 @@ local function buffer_fill(buf, offset, value, size)
 end
 
 -- SECTION buffer_read_i8
+-- NEEDS buffer_byte
 local function buffer_read_i8(buf, offset)
-	local value = buf[offset + 1]
+	local value = buffer_byte(buf, offset + 1)
 
 	if value >= 128 then
 		return value - 256
@@ -66,13 +132,15 @@ local function buffer_read_i8(buf, offset)
 end
 
 -- SECTION buffer_read_u8
+-- NEEDS buffer_byte
 local function buffer_read_u8(buf, offset)
-	return buf[offset + 1]
+	return buffer_byte(buf, offset + 1)
 end
 
 -- SECTION buffer_read_i16
+-- NEEDS buffer_byte
 local function buffer_read_i16(buf, offset)
-	local value = buf[offset + 1] + buf[offset + 2] * 256
+	local value = buffer_byte(buf, offset + 1) + buffer_byte(buf, offset + 2) * 256
 
 	if value >= 32768 then
 		return value - 65536
@@ -82,16 +150,18 @@ local function buffer_read_i16(buf, offset)
 end
 
 -- SECTION buffer_read_u16
+-- NEEDS buffer_byte
 local function buffer_read_u16(buf, offset)
-	return buf[offset + 1] + buf[offset + 2] * 256
+	return buffer_byte(buf, offset + 1) + buffer_byte(buf, offset + 2) * 256
 end
 
 -- SECTION buffer_read_i32
+-- NEEDS buffer_byte
 local function buffer_read_i32(buf, offset)
-	local value = buf[offset + 1]
-		+ buf[offset + 2] * 256
-		+ buf[offset + 3] * 65536
-		+ buf[offset + 4] * 16777216
+	local value = buffer_byte(buf, offset + 1)
+		+ buffer_byte(buf, offset + 2) * 256
+		+ buffer_byte(buf, offset + 3) * 65536
+		+ buffer_byte(buf, offset + 4) * 16777216
 
 	if value >= 2147483648 then
 		return value - 4294967296
@@ -101,11 +171,26 @@ local function buffer_read_i32(buf, offset)
 end
 
 -- SECTION buffer_read_u32
+-- NEEDS buffer_byte
 local function buffer_read_u32(buf, offset)
-	return (buf[offset + 1]
-		+ buf[offset + 2] * 256
-		+ buf[offset + 3] * 65536
-		+ buf[offset + 4] * 16777216) % 4294967296
+	local dirty = rawget(buf, "__d")
+
+	if dirty then
+		local o = offset + 1
+		local v1 = rawget(dirty, o)
+		local v2 = rawget(dirty, o + 1)
+		local v3 = rawget(dirty, o + 2)
+		local v4 = rawget(dirty, o + 3)
+
+		if v1 ~= nil and v2 ~= nil and v3 ~= nil and v4 ~= nil then
+			return (v1 + v2 * 256 + v3 * 65536 + v4 * 16777216) % 4294967296
+		end
+	end
+
+	return (buffer_byte(buf, offset + 1)
+		+ buffer_byte(buf, offset + 2) * 256
+		+ buffer_byte(buf, offset + 3) * 65536
+		+ buffer_byte(buf, offset + 4) * 16777216) % 4294967296
 end
 
 -- SECTION buffer_read_f32
@@ -126,17 +211,20 @@ local function buffer_read_f64(buf, offset)
 end
 
 -- SECTION buffer_write_u8
+-- NEEDS ensure_dirty
 local function buffer_write_u8(buf, offset, value)
 	buf[offset + 1] = value % 256
 end
 
 -- SECTION buffer_write_u16
+-- NEEDS ensure_dirty
 local function buffer_write_u16(buf, offset, value)
 	buf[offset + 1] = value % 256
 	buf[offset + 2] = math.floor(value / 256) % 256
 end
 
 -- SECTION buffer_write_u32
+-- NEEDS ensure_dirty
 local function buffer_write_u32(buf, offset, value)
 	value = value % 4294967296
 
@@ -164,7 +252,10 @@ local function buffer_write_f64(buf, offset, value)
 end
 
 -- SECTION buffer_writestring
+-- NEEDS ensure_dirty
 local function buffer_writestring(buf, offset, str)
+	ensure_dirty(buf)
+
 	for i = 1, #str do
 		buf[offset + i] = string.byte(str, i)
 	end

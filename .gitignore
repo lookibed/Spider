@@ -8,3 +8,4 @@ tests/**/generated/*
 *.zip
 /tests/manual/real-world-smollm2
 /tests/manual/self-hosting-luanoffi-builder
+/tests/manual/real-world-gltf-rs/rust/target

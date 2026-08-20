@@ -3,11 +3,13 @@ use std::io::{Result, Write};
 
 use luanoffi_tree::expression::{
 	BooleanToInteger, Call, Expression, Function, GlobalGet, GlobalNew, Import,
-	IntegerBinaryOperation, IntegerCompareOperation, IntegerConvertToNumber, IntegerExtend,
-	IntegerNarrow, IntegerTransmuteToNumber, IntegerUnaryOperation, IntegerWiden, Local, Location,
+	IntegerBinaryOperation, IntegerBinaryOperator, IntegerCompareOperation,
+	IntegerConvertToNumber, IntegerExtend, IntegerNarrow, IntegerTransmuteToNumber,
+	IntegerType, IntegerUnaryOperation, IntegerWiden, LoadType, Local, Location,
 	MemoryGrow, MemoryLoad, MemoryNew, MemorySize, Name, NumberBinaryOperation,
-	NumberCompareOperation, NumberNarrow, NumberTransmuteToInteger, NumberTruncateToInteger,
-	NumberUnaryOperation, NumberWiden, RefIsNull, Scoped, TableGet, TableGrow, TableNew, TableSize,
+	NumberCompareOperation, NumberNarrow, NumberTransmuteToInteger,
+	NumberTruncateToInteger, NumberUnaryOperation, NumberWiden, RefIsNull, Scoped,
+	TableGet, TableGrow, TableNew, TableSize,
 };
 use luanoffi_tree::statement::Statement;
 
@@ -431,19 +433,42 @@ impl Print for IntegerUnaryOperation {
 
 impl Print for IntegerBinaryOperation {
 	fn print(&self, printer: &mut LuaNoFFIPrinter, out: &mut dyn Write) -> Result<()> {
-		let Self { lhs, rhs, .. } = self;
+		use IntegerBinaryOperator::{Add, Subtract};
+		use IntegerType::I32;
 
-		let intrinsic = self.needs_name();
+		let Self {
+			lhs, rhs, kind, operator,
+		} = self;
 
-		write!(out, "rt_{intrinsic}(")?;
+		match (*kind, *operator) {
+			(I32, Add) => {
+				write!(out, "bit32_or(")?;
+				lhs.print(printer, out)?;
+				write!(out, " + ")?;
+				rhs.print(printer, out)?;
+				write!(out, ", 0)")
+			}
+			(I32, Subtract) => {
+				write!(out, "bit32_or(")?;
+				lhs.print(printer, out)?;
+				write!(out, " - ")?;
+				rhs.print(printer, out)?;
+				write!(out, ", 0)")
+			}
+			_ => {
+				let intrinsic = self.needs_name();
 
-		lhs.print(printer, out)?;
+				write!(out, "rt_{intrinsic}(")?;
 
-		write!(out, ", ")?;
+				lhs.print(printer, out)?;
 
-		rhs.print(printer, out)?;
+				write!(out, ", ")?;
 
-		write!(out, ")")
+				rhs.print(printer, out)?;
+
+				write!(out, ")")
+			}
+		}
 	}
 }
 
@@ -771,15 +796,31 @@ impl Print for MemoryNew {
 
 impl Print for MemoryLoad {
 	fn print(&self, printer: &mut LuaNoFFIPrinter, out: &mut dyn Write) -> Result<()> {
-		let Self { source, .. } = self;
+		use LoadType::I32;
 
-		let intrinsic = self.needs_name();
+		let Self {
+			source: Location { reference, offset },
+			kind,
+		} = self;
 
-		write!(out, "rt_{intrinsic}(")?;
+		match *kind {
+			I32 => {
+				write!(out, "buffer_read_u32(")?;
+				reference.print(printer, out)?;
+				write!(out, "[1], ")?;
+				offset.print(printer, out)?;
+				write!(out, ")")
+			}
+			_ => {
+				let intrinsic = self.needs_name();
 
-		source.print(printer, out)?;
-
-		write!(out, ")")
+				write!(out, "rt_{intrinsic}(")?;
+				reference.print(printer, out)?;
+				write!(out, ", ")?;
+				offset.print(printer, out)?;
+				write!(out, ")")
+			}
+		}
 	}
 }
 
