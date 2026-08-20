@@ -1,11 +1,6 @@
 # Spider
 
-Spider is a compiler that translates WebAssembly binaries into Lua-family source files:
-
-- `luau`
-- `lua-jit`
-- `lua-no-ffi`
-- `json`
+Spider is a compiler that translates WebAssembly binaries into `lua-no-ffi`, `lua-jit`, `luau`, and `json` targets.
 
 The current project story is simple:
 
@@ -32,19 +27,11 @@ This is not the full matrix. The complete runtime and size tables, including mor
 
 ## What Spider is selling now
 
-Spider should be read as a compiler that is proving a stronger claim than before:
-
-1. Wasm can be lowered into plain Lua-family code without making `ffi` the center of gravity.
-2. The `lua-no-ffi` target is already strong enough to stand on real translated workloads.
-3. The project is actively beating back the historic failure modes of the original model: scope pressure, upvalue limits, and oversized closure-heavy code shape.
+Spider now argues a stronger point than before: Wasm can be lowered into plain Lua-family code without centering the whole runtime story on `ffi`, and that claim is being tested on full translated workloads rather than toy examples.
 
 ## `lua-no-ffi` is the main target
 
-The new center of gravity is `lua-no-ffi`.
-
-- It is benchmarked directly against the older `lua-jit` / `ffi` route.
-- It is the path where backend work is currently paying off.
-- It is the path that makes Spider meaningfully more portable and less dependent on host `ffi` behavior.
+`lua-no-ffi` is now the project's center of gravity because it is benchmarked directly against the older `lua-jit` route, it is where backend work is paying off, and it gives Spider a more portable path with less dependence on host `ffi`.
 
 Read these first:
 
@@ -72,18 +59,7 @@ This is the point of the repository now: not "can it compile a tiny wasm," but "
 
 ## What changed versus the old Spider story
 
-The old easy reading was:
-
-- generate Lua
-- rely on `ffi`
-- accept original LuaJIT limits as fixed
-
-The current reading should be:
-
-- push `lua-no-ffi` as a first-class working target
-- compare it on real fixtures against the old path
-- reshape generated code when LuaJIT limits become the bottleneck
-- keep the classic `ffi` route alive, including Windows support, but stop pretending it is the only serious route
+The old reading of Spider was "generate Lua, rely on `ffi`, and treat LuaJIT limits as fixed"; the current reading is "push `lua-no-ffi` as a first-class target, measure it on real fixtures, and reshape generated code when those limits become a compiler problem instead of an excuse."
 
 ## Important notes
 
@@ -102,23 +78,19 @@ If you want current open edges instead of the success story:
 
 ### `lua-no-ffi`
 
-This is the headline target.
-
-- Reduced dependence on host `ffi`
-- Measured on real fixtures
-- Target-side work against `upvalue` and `scope` limits
+The main target lowers Wasm into plain LuaJIT-compatible code without making host `ffi` the core dependency.
 
 ### `lua-jit`
 
-This remains useful as the legacy fast path and as a comparison target.
+The legacy target keeps the classic `ffi`-based fast path as a compatibility and comparison baseline.
 
 ### `luau`
 
-This remains the Luau-oriented route.
+The Luau target emits Luau-oriented output for that runtime family.
 
 ### `json`
 
-This remains the structural/debug output target.
+The JSON target emits a structural representation useful for debugging and inspection.
 
 ## Repository layout
 
