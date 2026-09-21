@@ -174,7 +174,7 @@ impl JsonPrinter {
 			});
 		}
 
-		for edge in self.edges.chunks_exact_mut(4) {
+		for edge in self.edges.as_chunks_mut::<4>().0 {
 			if let Node::GammaOut(GammaOut { input, .. }) = *graph.get(edge[0]) {
 				edge[0] = input;
 			}
