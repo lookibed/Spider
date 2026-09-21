@@ -1,21 +1,21 @@
 ;; Node::MemoryLoad
-(decl MemoryLoad (Link Link LoadType) Link)
+(decl MemoryLoad (Link Link u32 LoadType) Link)
 (extern extractor MemoryLoad get_memory_load)
 
 ;; Node::MemoryLoad (LoadType::I32)
-(decl I32Load (Link Link) Link)
+(decl I32Load (Link Link u32) Link)
 
-(extractor (I32Load memory offset)
-	(MemoryLoad memory offset (LoadType.I32))
+(extractor (I32Load memory offset static)
+	(MemoryLoad memory offset static (LoadType.I32))
 )
 
 ;; Node::MemoryStore
-(decl MemoryStore (Link Link Link StoreType) Link)
+(decl MemoryStore (Link Link u32 Link StoreType) Link)
 (extern extractor MemoryStore get_memory_store)
 
 ;; Node::MemoryStore (StoreType::I32)
-(decl I32Store (Link Link Link) Link)
+(decl I32Store (Link Link u32 Link) Link)
 
-(extractor (I32Store memory offset source)
-	(MemoryStore memory offset source (StoreType.I32))
+(extractor (I32Store memory offset static source)
+	(MemoryStore memory offset static source (StoreType.I32))
 )

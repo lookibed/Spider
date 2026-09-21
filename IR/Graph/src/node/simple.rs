@@ -431,10 +431,15 @@ pub struct TableNew {
 }
 
 /// A table element read node.
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub struct TableGet {
 	/// The source location to read from.
 	pub source: Location,
+	/// The structural function type key the element is checked against.
+	///
+	/// This is only set for the read backing an indirect call; a plain `table.get` is
+	/// left unguarded.
+	pub key: Option<Arc<str>>,
 }
 
 /// A table element write node.
@@ -548,6 +553,8 @@ pub enum LoadType {
 pub struct MemoryLoad {
 	/// The source location to load from.
 	pub source: Location,
+	/// The static byte offset added to the address.
+	pub offset: u32,
 	/// The load type.
 	pub kind: LoadType,
 }
@@ -588,6 +595,8 @@ pub struct MemoryStore {
 	pub destination: Location,
 	/// The link to the value being stored.
 	pub source: Link,
+	/// The static byte offset added to the address.
+	pub offset: u32,
 	/// The store type.
 	pub kind: StoreType,
 }

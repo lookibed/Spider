@@ -227,7 +227,12 @@ macro_rules! handle_requirements {
 }
 
 impl LambdaIn {
-	handle_sources!((output, id), (kind, ignore), (dependencies, link_list));
+	handle_sources!(
+		(output, id),
+		(kind, ignore),
+		(dependencies, link_list),
+		(key, ignore)
+	);
 }
 
 impl LambdaOut {
@@ -422,7 +427,7 @@ impl TableNew {
 }
 
 impl TableGet {
-	handle_sources!((source, method));
+	handle_sources!((source, method), (key, ignore));
 }
 
 impl TableSet {
@@ -454,11 +459,16 @@ impl MemoryNew {
 }
 
 impl MemoryLoad {
-	handle_sources!((source, method), (kind, ignore));
+	handle_sources!((source, method), (offset, ignore), (kind, ignore));
 }
 
 impl MemoryStore {
-	handle_sources!((destination, method), (source, link), (kind, ignore));
+	handle_sources!(
+		(destination, method),
+		(source, link),
+		(offset, ignore),
+		(kind, ignore)
+	);
 }
 
 impl MemorySize {

@@ -2,7 +2,7 @@
 
 (rule
 	(SimplifyMemory
-		(I32Load memory @ (I32Store _ offset source) offset)
+		(I32Load memory @ (I32Store _ offset static source) offset static)
 	)
 
 	(Links.N2 source memory)

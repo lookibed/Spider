@@ -209,8 +209,11 @@ impl Context for DataFlowGraph {
 	}
 
 	fn get_table_get(&mut self, arg0: Link) -> Option<(Link, Link)> {
+		// A read that guards an indirect call must keep its type check, so it is never
+		// forwarded to the value a preceding write stored.
 		if let Node::TableGet(TableGet {
 			source: Location { reference, offset },
+			key: None,
 		}) = *self.get(arg0.0)
 		{
 			let reference = find_first_producer(self, reference);
@@ -238,25 +241,27 @@ impl Context for DataFlowGraph {
 		}
 	}
 
-	fn get_memory_load(&mut self, arg0: Link) -> Option<(Link, Link, LoadType)> {
+	fn get_memory_load(&mut self, arg0: Link) -> Option<(Link, Link, u32, LoadType)> {
 		if let Node::MemoryLoad(MemoryLoad {
 			source: Location { reference, offset },
+			offset: static_offset,
 			kind,
 		}) = *self.get(arg0.0)
 		{
 			let reference = find_first_producer(self, reference);
 			let offset = find_first_producer(self, offset);
 
-			Some((reference, offset, kind))
+			Some((reference, offset, static_offset, kind))
 		} else {
 			None
 		}
 	}
 
-	fn get_memory_store(&mut self, arg0: Link) -> Option<(Link, Link, Link, StoreType)> {
+	fn get_memory_store(&mut self, arg0: Link) -> Option<(Link, Link, u32, Link, StoreType)> {
 		if let Node::MemoryStore(MemoryStore {
 			destination: Location { reference, offset },
 			source,
+			offset: static_offset,
 			kind,
 		}) = *self.get(arg0.0)
 		{
@@ -264,7 +269,7 @@ impl Context for DataFlowGraph {
 			let offset = find_first_producer(self, offset);
 			let source = find_first_producer(self, source);
 
-			Some((reference, offset, source, kind))
+			Some((reference, offset, static_offset, source, kind))
 		} else {
 			None
 		}

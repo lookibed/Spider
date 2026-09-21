@@ -39,6 +39,9 @@ pub struct LambdaIn {
 	pub kind: Box<FunctionType>,
 	/// The closure dependencies.
 	pub dependencies: Vec<Link>,
+	/// The structural function type key registered for the closure, if it is a
+	/// WebAssembly function that an indirect call may reach.
+	pub key: Option<Arc<str>>,
 }
 
 /// A lambda (function) output node.

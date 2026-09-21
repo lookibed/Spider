@@ -258,3 +258,80 @@ impl Default for DeadPortEliminator {
 		Self::new()
 	}
 }
+
+#[cfg(test)]
+mod tests {
+	use ir_graph::{
+		DataFlowGraph, Link, Node,
+		control::{OmegaIn, OmegaOut},
+		simple::{Fence, IntegerBinaryOperation, IntegerBinaryOperator, IntegerType},
+	};
+
+	use crate::topological_normalizer::TopologicalNormalizer;
+
+	use super::DeadPortEliminator;
+
+	/// Builds a program whose only division is never read from.
+	///
+	/// When `pinned` is set the division is chained onto the state token the way the
+	/// WebAssembly lifter pins an operation that may trap, which is what keeps it alive.
+	fn build_dropped_division(pinned: bool) -> (DataFlowGraph, u32) {
+		let mut graph = DataFlowGraph::new();
+
+		let omega_in = OmegaIn::add_into(&mut graph);
+		let state = Link(omega_in, OmegaIn::STATE_PORT);
+
+		let lhs = Node::add_i32_into(&mut graph, 1);
+		let rhs = Node::add_i32_into(&mut graph, 0);
+
+		let division = IntegerBinaryOperation::add_into(
+			&mut graph,
+			lhs,
+			rhs,
+			IntegerType::I32,
+			IntegerBinaryOperator::Divide { signed: true },
+		);
+
+		let state = if pinned {
+			let fence = Fence::add_into(&mut graph, ir_graph::list::resizable![state, division]);
+
+			Link(fence, 0)
+		} else {
+			state
+		};
+
+		let omega_out = OmegaOut::add_into(&mut graph, omega_in, state, alloc::vec::Vec::new());
+
+		(graph, omega_out)
+	}
+
+	fn count_divisions(graph: &DataFlowGraph) -> usize {
+		graph
+			.nodes()
+			.filter(|node| matches!(**node, Node::IntegerBinaryOperation(_)))
+			.count()
+	}
+
+	fn optimize(graph: &mut DataFlowGraph, omega_out: u32) {
+		DeadPortEliminator::new().run(graph, Link(omega_out, 0));
+		TopologicalNormalizer::new().run(graph, omega_out);
+	}
+
+	#[test]
+	fn dropped_trapping_operation_survives_elimination_when_pinned() {
+		let (mut graph, omega_out) = build_dropped_division(true);
+
+		optimize(&mut graph, omega_out);
+
+		assert_eq!(count_divisions(&graph), 1);
+	}
+
+	#[test]
+	fn dropped_operation_is_eliminated_without_a_pin() {
+		let (mut graph, omega_out) = build_dropped_division(false);
+
+		optimize(&mut graph, omega_out);
+
+		assert_eq!(count_divisions(&graph), 0);
+	}
+}

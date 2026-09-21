@@ -353,8 +353,12 @@ impl TableGet {
 	pub const STATE_PORT: u16 = 1;
 
 	/// Adds a table read node to the graph.
-	pub fn add_into(graph: &mut DataFlowGraph, source: Location) -> (Link, Link) {
-		let node = Node::TableGet(Self { source });
+	pub fn add_into(
+		graph: &mut DataFlowGraph,
+		source: Location,
+		key: Option<Arc<str>>,
+	) -> (Link, Link) {
+		let node = Node::TableGet(Self { source, key });
 		let id = graph.add_node(node);
 
 		(Link(id, Self::RESULT_PORT), Link(id, Self::STATE_PORT))
@@ -500,8 +504,17 @@ impl MemoryLoad {
 	pub const STATE_PORT: u16 = 1;
 
 	/// Adds a memory load node to the graph.
-	pub fn add_into(graph: &mut DataFlowGraph, source: Location, kind: LoadType) -> (Link, Link) {
-		let node = Node::MemoryLoad(Self { source, kind });
+	pub fn add_into(
+		graph: &mut DataFlowGraph,
+		source: Location,
+		offset: u32,
+		kind: LoadType,
+	) -> (Link, Link) {
+		let node = Node::MemoryLoad(Self {
+			source,
+			offset,
+			kind,
+		});
 		let id = graph.add_node(node);
 
 		(Link(id, Self::RESULT_PORT), Link(id, Self::STATE_PORT))
@@ -517,11 +530,13 @@ impl MemoryStore {
 		graph: &mut DataFlowGraph,
 		destination: Location,
 		source: Link,
+		offset: u32,
 		kind: StoreType,
 	) -> Link {
 		let node = Node::MemoryStore(Self {
 			destination,
 			source,
+			offset,
 			kind,
 		});
 
@@ -667,11 +682,13 @@ impl LambdaIn {
 		graph: &mut DataFlowGraph,
 		kind: Box<FunctionType>,
 		dependencies: Vec<Link>,
+		key: Option<Arc<str>>,
 	) -> u32 {
 		let node = Node::LambdaIn(Self {
 			output: u32::MAX,
 			kind,
 			dependencies,
+			key,
 		});
 
 		graph.add_node(node)
