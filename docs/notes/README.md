@@ -14,6 +14,11 @@ This directory holds the working notes that explain where Spider is actually win
 - [lua-no-ffi-known-bugs.md](lua-no-ffi-known-bugs.md)
 - [problem_lua_limits.md](problem_lua_limits.md)
 
+## Performance studies
+
+- [lua-no-ffi-performance-hypotheses.md](lua-no-ffi-performance-hypotheses.md)
+- [lua-no-ffi-upvalue-strategies.md](lua-no-ffi-upvalue-strategies.md)
+
 ## Upstream
 
 - [upstream-review.md](upstream-review.md)
