@@ -1,0 +1,12 @@
+[package]
+name = "self-hosting-luanoffi-builder"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+ir-graph = { path = "../../../IR/Graph" }
+luanoffi-builder = { path = "../../../Targets/LuaNoFFI/Builder" }
+luanoffi-tree = { path = "../../../Targets/LuaNoFFI/Tree" }
