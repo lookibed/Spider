@@ -1,4 +1,4 @@
-//! Conformance tests for the Luau target.
+//! Conformance tests for the `LuaNoFFI` target.
 
 extern crate alloc;
 
@@ -13,11 +13,12 @@ use std::{
 
 use alloc::sync::Arc;
 use datatest_stable::Result;
-use luau_builder::LuauBuilder;
-use luau_printer::{
-	LuauPrinter,
+use luanoffi_builder::LuaNoFFIBuilder;
+use luanoffi_printer::{
+	LuaNoFFIPrinter,
 	library::{NamesFinder, Printer as LibraryPrinter, Sections as LibrarySections},
 };
+use luanoffi_tree::LuaNoFFITree;
 use wast::{
 	QuoteWat, WastArg, WastExecute, WastInvoke, WastRet, WastThread, Wat,
 	core::{NanPattern, WastArgCore, WastRetCore},
@@ -28,29 +29,27 @@ use common::{compiler::Compiler, process, visitor::Visitor};
 
 use luajit_builder as _;
 use luajit_printer as _;
-use luanoffi_builder as _;
-use luanoffi_printer as _;
-use luanoffi_tree as _;
+use luau_builder as _;
+use luau_printer as _;
 
-const HARNESS_START_SOURCE: &str = include_str!("harness/luau.start.luau");
-const HARNESS_END_SOURCE: &str = include_str!("harness/luau.end.luau");
+const HARNESS_START_SOURCE: &str = include_str!("harness/luanoffi.start.lua");
+const HARNESS_END_SOURCE: &str = include_str!("harness/luanoffi.end.lua");
 
 const REPETITION_COUNT: usize = 32;
 
-struct Luau {
+struct LuaNoFFI {
 	library_sections: LibrarySections,
 	library_printer: LibraryPrinter,
 	references: Vec<&'static str>,
 
 	compiler: Compiler,
-	builder: LuauBuilder,
-	printer: LuauPrinter,
+	builder: LuaNoFFIBuilder,
 	optimized: bool,
 
 	file: Vec<u8>,
 }
 
-impl Luau {
+impl LuaNoFFI {
 	fn new(optimized: bool) -> Self {
 		let mut library_sections = LibrarySections::with_built_ins();
 
@@ -63,17 +62,23 @@ impl Luau {
 			references: Vec::new(),
 
 			compiler: Compiler::new(),
-			builder: LuauBuilder::new(),
-			printer: LuauPrinter::new(),
+			builder: LuaNoFFIBuilder::new(),
 			optimized,
 
 			file: Vec::new(),
 		}
 	}
 
+	/// The sections whose locals the generated chunk refers to by name.
+	///
+	/// The library prints every section inside its own scope, so anything the
+	/// test body mentions outside of a section has to be bound again.
+	const CHUNK_SECTIONS: [&str; 3] = ["environment", "from_bits_f64", "into_bits_i64"];
+
 	fn write_into(mut self, out: &mut dyn Write) -> Result<()> {
 		self.references.push("spectest");
 		self.references.push("report_failure");
+		self.references.push("environment");
 
 		self.references.sort_unstable();
 		self.references.dedup();
@@ -83,21 +88,42 @@ impl Luau {
 
 		self.library_printer.print(&self.library_sections, out)?;
 
+		let bindings = Self::CHUNK_SECTIONS
+			.into_iter()
+			.filter(|name| self.references.binary_search(name).is_ok())
+			.collect::<Vec<_>>();
+
+		self.library_printer
+			.print_bindings(&bindings, &self.library_sections, out)?;
+
 		out.write_all(&self.file)?;
 		out.write_all(HARNESS_END_SOURCE.as_bytes())?;
 
 		Ok(())
 	}
 
-	fn fmt_source(&mut self, data: &[u8]) -> Result<()> {
+	fn build_tree(&mut self, data: &[u8]) -> LuaNoFFITree {
 		let graph = self.compiler.run(data, self.optimized);
-		let tree = self.builder.run(&graph);
 
-		NamesFinder::new(&mut self.references).run(&tree);
+		self.builder.run(&graph)
+	}
 
-		self.printer.indent();
-		self.printer.print(&tree, &mut self.file)?;
-		self.printer.outdent();
+	fn fmt_source(&mut self, data: &[u8]) -> Result<()> {
+		let tree = self.build_tree(data);
+
+		let mut names = Vec::new();
+
+		NamesFinder::new(&mut names).run(&tree);
+
+		self.references.extend(names.iter().copied());
+
+		let mut printer = LuaNoFFIPrinter::new();
+
+		printer.set_runtime_names(names);
+
+		printer.indent();
+		printer.print(&tree, &mut self.file)?;
+		printer.outdent();
 
 		Ok(())
 	}
@@ -135,18 +161,15 @@ impl Luau {
 	}
 
 	fn fmt_argument_i32(&mut self, value: i32) -> Result<()> {
-		let value = u32::from_ne_bytes(value.to_ne_bytes());
-
 		write!(self.file, "{value} --[[ 0x{value:08X} ]]")?;
 
 		Ok(())
 	}
 
 	fn fmt_argument_i64(&mut self, value: i64) -> Result<()> {
-		let [b1, b2, b3, b4, b5, b6, b7, b8] = value.to_le_bytes();
-
-		let source_1 = u32::from_le_bytes([b1, b2, b3, b4]);
-		let source_2 = u32::from_le_bytes([b5, b6, b7, b8]);
+		let bits = u64::from_ne_bytes(value.to_ne_bytes());
+		let source_1 = bits & 0xFFFF_FFFF;
+		let source_2 = bits >> 32_u32;
 
 		self.references.push("into_bits_i64");
 
@@ -161,6 +184,7 @@ impl Luau {
 	fn fmt_argument_f32(&mut self, value: F32) -> Result<()> {
 		let F32 { bits } = value;
 		let float = f32::from_bits(bits);
+		let bits = i32::from_ne_bytes(bits.to_ne_bytes());
 
 		write!(self.file, "{bits} --[[ {float}_f32 ]]")?;
 
@@ -171,16 +195,14 @@ impl Luau {
 		let F64 { bits } = value;
 		let float = f64::from_bits(bits);
 
-		let [b1, b2, b3, b4, b5, b6, b7, b8] = bits.to_le_bytes();
+		let source_1 = bits & 0xFFFF_FFFF;
+		let source_2 = bits >> 32_u32;
 
-		let source_1 = u32::from_le_bytes([b1, b2, b3, b4]);
-		let source_2 = u32::from_le_bytes([b5, b6, b7, b8]);
-
-		self.references.push("into_bits_i64");
+		self.references.push("from_bits_f64");
 
 		write!(
 			self.file,
-			"into_bits_i64({source_1}, {source_2}) --[[ {float}_f64 ]]"
+			"from_bits_f64({source_1}, {source_2}) --[[ {float}_f64 ]]"
 		)?;
 
 		Ok(())
@@ -281,8 +303,6 @@ impl Luau {
 	}
 
 	fn fmt_assert_equal_i32(&mut self, value: i32) -> Result<()> {
-		let value = u32::from_ne_bytes(value.to_ne_bytes());
-
 		self.references.push("assert_equal_i32");
 
 		write!(
@@ -294,10 +314,9 @@ impl Luau {
 	}
 
 	fn fmt_assert_equal_i64(&mut self, value: i64) -> Result<()> {
-		let [b1, b2, b3, b4, b5, b6, b7, b8] = value.to_le_bytes();
-
-		let source_1 = u32::from_le_bytes([b1, b2, b3, b4]);
-		let source_2 = u32::from_le_bytes([b5, b6, b7, b8]);
+		let bits = u64::from_ne_bytes(value.to_ne_bytes());
+		let source_1 = bits & 0xFFFF_FFFF;
+		let source_2 = bits >> 32_u32;
 
 		self.references.push("assert_equal_i64");
 		self.references.push("into_bits_i64");
@@ -313,6 +332,7 @@ impl Luau {
 	fn fmt_assert_equal_f32(&mut self, value: F32) -> Result<()> {
 		let F32 { bits } = value;
 		let float = f32::from_bits(bits);
+		let bits = i32::from_ne_bytes(bits.to_ne_bytes());
 
 		self.references.push("assert_equal_f32");
 
@@ -325,17 +345,14 @@ impl Luau {
 		let F64 { bits } = value;
 		let float = f64::from_bits(bits);
 
-		let [b1, b2, b3, b4, b5, b6, b7, b8] = bits.to_le_bytes();
-
-		let source_1 = u32::from_le_bytes([b1, b2, b3, b4]);
-		let source_2 = u32::from_le_bytes([b5, b6, b7, b8]);
+		let source_1 = bits & 0xFFFF_FFFF;
+		let source_2 = bits >> 32_u32;
 
 		self.references.push("assert_equal_f64");
-		self.references.push("into_bits_i64");
 
 		write!(
 			self.file,
-			"hn_assert_equal_f64(into_bits_i64({source_1}, {source_2})) --[[ {float}_f64 ]]"
+			"hn_assert_equal_f64({source_1}, {source_2}) --[[ {float}_f64 ]]"
 		)?;
 
 		Ok(())
@@ -417,7 +434,7 @@ impl Luau {
 	}
 }
 
-impl Visitor for Luau {
+impl Visitor for LuaNoFFI {
 	fn visit_module(&mut self, mut quote_wat: QuoteWat<'_>) -> Result<()> {
 		let data = quote_wat.encode()?;
 
@@ -569,8 +586,9 @@ impl Visitor for Luau {
 fn get_path_target(name: &OsStr, optimized: bool, native: bool) -> Result<Arc<Path>> {
 	let mut path = [
 		env!("CARGO_TARGET_TMPDIR"),
+		"noffi",
 		if native { "native" } else { "interpreter" },
-		if optimized { "O2" } else { "O0" },
+		if optimized { "O3" } else { "O0" },
 	]
 	.iter()
 	.collect::<PathBuf>();
@@ -578,19 +596,19 @@ fn get_path_target(name: &OsStr, optimized: bool, native: bool) -> Result<Arc<Pa
 	std::fs::create_dir_all(&path)?;
 
 	path.push(name);
-	path.set_extension("luau");
+	path.set_extension("noffi.lua");
 
 	Ok(path.into())
 }
 
 fn compile_test(destination: &Path, tested: &str, optimized: bool) -> Result<()> {
-	let mut luau = Luau::new(optimized);
+	let mut luanoffi = LuaNoFFI::new(optimized);
 
-	luau.visit(tested)?;
+	luanoffi.visit(tested)?;
 
 	let mut destination = File::create(destination).map(BufWriter::new)?;
 
-	luau.write_into(&mut destination)?;
+	luanoffi.write_into(&mut destination)?;
 
 	destination.flush()?;
 
@@ -598,15 +616,13 @@ fn compile_test(destination: &Path, tested: &str, optimized: bool) -> Result<()>
 }
 
 fn run_file(destination: &Path, optimized: bool, native: bool) -> std::io::Result<Box<str>> {
-	let mut arguments = vec![OsStr::new(if optimized { "-O2" } else { "-O0" })];
+	let arguments = [
+		OsStr::new(if optimized { "-O3" } else { "-O0" }),
+		OsStr::new(if native { "-jon" } else { "-joff" }),
+		destination.as_ref(),
+	];
 
-	if native {
-		arguments.push(OsStr::new("--codegen"));
-	}
-
-	arguments.push(destination.as_ref());
-
-	let program = std::env::var_os("LUAU_PATH").unwrap_or_else(|| "luau".into());
+	let program = std::env::var_os("LUAJIT_PATH").unwrap_or_else(|| "luajit".into());
 	let output = process::run(&program, &arguments)?;
 
 	Ok(output)
@@ -640,7 +656,7 @@ fn bytecode_o0(path: &Path) -> Result<()> {
 	run_and_assert(path, false, false)
 }
 
-fn bytecode_o2(path: &Path) -> Result<()> {
+fn bytecode_o3(path: &Path) -> Result<()> {
 	run_and_assert(path, true, false)
 }
 
@@ -648,13 +664,13 @@ fn native_o0(path: &Path) -> Result<()> {
 	run_and_assert(path, false, true)
 }
 
-fn native_o2(path: &Path) -> Result<()> {
+fn native_o3(path: &Path) -> Result<()> {
 	run_and_assert(path, true, true)
 }
 
 datatest_stable::harness! {
 	{ test = bytecode_o0, root = "Suite", pattern = r"^(?!simd_)\w+\.wast$" },
-	{ test = bytecode_o2, root = "Suite", pattern = r"^(?!simd_)\w+\.wast$" },
+	{ test = bytecode_o3, root = "Suite", pattern = r"^(?!simd_)\w+\.wast$" },
 	{ test = native_o0, root = "Suite", pattern = r"^(?!simd_)\w+\.wast$" },
-	{ test = native_o2, root = "Suite", pattern = r"^(?!simd_)\w+\.wast$" },
+	{ test = native_o3, root = "Suite", pattern = r"^(?!simd_)\w+\.wast$" },
 }

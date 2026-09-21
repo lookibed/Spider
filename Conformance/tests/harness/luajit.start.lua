@@ -4,6 +4,7 @@ local named = {}
 local selected = nil
 
 -- SECTION spectest
+-- NEEDS bit
 -- NEEDS environment
 -- NEEDS from_bits_f32
 -- NEEDS from_bits_f64
@@ -25,11 +26,13 @@ do
 	spectest.print = print
 
 	function spectest.print_i32(argument)
-		print(string.format("I32 `0x%08X`", argument))
+		print(string.format("I32 `0x%s`", string.upper(bit.tohex(argument))))
 	end
 
 	function spectest.print_i64(argument)
-		print(string.format("I64 `0x%016X`", argument))
+		-- `string.format` rejects 64 bit cdata for the integer specifiers, so
+		-- the halves are rendered by the bit library instead.
+		print(string.format("I64 `0x%s`", string.upper(bit.tohex(argument))))
 	end
 
 	function spectest.print_f32(argument)
@@ -47,7 +50,7 @@ do
 	function spectest.print_i32_f32(argument_1, argument_2)
 		argument_2 = from_bits_f32(argument_2)
 
-		print(string.format("I32 `0x%08X`, F32 `%g`", argument_1, argument_2))
+		print(string.format("I32 `0x%s`, F32 `%g`", string.upper(bit.tohex(argument_1)), argument_2))
 	end
 
 	function spectest.print_f64_f64(argument_1, argument_2)
@@ -111,18 +114,27 @@ function hn_assert_ref_extern(source)
 end
 
 -- SECTION assert_equal_i32
+-- NEEDS bit
 -- NEEDS report_failure
 function hn_assert_equal_i32(target)
 	return function(source)
 		if type(source) ~= "number" then
 			hn_report_failure("`%s` should be type `i32`", 2, source)
 		elseif source ~= target then
-			hn_report_failure("`%08X` (%s) should equal `%08X` (%s)", 2, source, source, target, target)
+			hn_report_failure(
+				"`%s` (%s) should equal `%s` (%s)",
+				2,
+				string.upper(bit.tohex(source)),
+				source,
+				string.upper(bit.tohex(target)),
+				target
+			)
 		end
 	end
 end
 
 -- SECTION assert_equal_i64
+-- NEEDS bit
 -- NEEDS ffi
 -- NEEDS report_failure
 function hn_assert_equal_i64(target)
@@ -130,24 +142,56 @@ function hn_assert_equal_i64(target)
 		if not ffi.istype("int64_t", source) then
 			hn_report_failure("`%s` should be type `i64`", 2, source)
 		elseif source ~= target then
-			hn_report_failure("`%016X` (%s) should equal `%016X` (%s)", 2, source, source, target, target)
+			hn_report_failure(
+				"`%s` (%s) should equal `%s` (%s)",
+				2,
+				string.upper(bit.tohex(source)),
+				source,
+				string.upper(bit.tohex(target)),
+				target
+			)
 		end
 	end
 end
 
 -- SECTION is_f32_nan_canonical
+-- NEEDS bit
 -- NEEDS bit_and
+-- NEEDS report_failure
 function hn_is_f32_nan_canonical(source)
-	return bit_and(source, 0x7FFFFFFF) == 0x7F800000
+	if type(source) ~= "number" then
+		hn_report_failure("`%s` should be type `f32`", 2, source)
+
+		return
+	end
+
+	-- The canonical `f32` nan has every exponent bit set, the most significant
+	-- mantissa bit set and every other mantissa bit clear.
+	if bit_and(source, 0x7FFFFFFF) ~= 0x7FC00000 then
+		hn_report_failure("`%s` should be a canonical `f32` nan", 2, string.upper(bit.tohex(source)))
+	end
 end
 
 -- SECTION is_f32_nan_arithmetic
+-- NEEDS bit
 -- NEEDS bit_and
+-- NEEDS report_failure
 function hn_is_f32_nan_arithmetic(source)
-	return bit_and(source, 0x7F800000) == 0x7F800000
+	if type(source) ~= "number" then
+		hn_report_failure("`%s` should be type `f32`", 2, source)
+
+		return
+	end
+
+	-- An arithmetic `f32` nan has every exponent bit set and the most
+	-- significant mantissa bit set; the remaining payload is unspecified.
+	if bit_and(source, 0x7FC00000) ~= 0x7FC00000 then
+		hn_report_failure("`%s` should be an arithmetic `f32` nan", 2, string.upper(bit.tohex(source)))
+	end
 end
 
 -- SECTION assert_equal_f32
+-- NEEDS bit
 -- NEEDS from_bits_f32
 -- NEEDS report_failure
 function hn_assert_equal_f32(target)
@@ -156,11 +200,11 @@ function hn_assert_equal_f32(target)
 			hn_report_failure("`%s` should be type `f32`", 2, source)
 		elseif source ~= target then
 			hn_report_failure(
-				"`%08X` (%s) should equal `%08X` (%s)",
+				"`%s` (%s) should equal `%s` (%s)",
 				2,
-				source,
+				string.upper(bit.tohex(source)),
 				from_bits_f32(source),
-				target,
+				string.upper(bit.tohex(target)),
 				from_bits_f32(target)
 			)
 		end
@@ -168,18 +212,45 @@ function hn_assert_equal_f32(target)
 end
 
 -- SECTION is_f64_nan_canonical
+-- NEEDS bit
 -- NEEDS bit_and
+-- NEEDS ffi
+-- NEEDS report_failure
 function hn_is_f64_nan_canonical(source)
-	return bit_and(source, 0x7FFFFFFFFFFFFFFFLL) == 0x7FF0000000000000LL
+	if not ffi.istype("int64_t", source) then
+		hn_report_failure("`%s` should be type `f64`", 2, source)
+
+		return
+	end
+
+	-- The canonical `f64` nan has every exponent bit set, the most significant
+	-- mantissa bit set and every other mantissa bit clear.
+	if bit_and(source, 0x7FFFFFFFFFFFFFFFLL) ~= 0x7FF8000000000000LL then
+		hn_report_failure("`%s` should be a canonical `f64` nan", 2, string.upper(bit.tohex(source)))
+	end
 end
 
 -- SECTION is_f64_nan_arithmetic
+-- NEEDS bit
 -- NEEDS bit_and
+-- NEEDS ffi
+-- NEEDS report_failure
 function hn_is_f64_nan_arithmetic(source)
-	return bit_and(source, 0x7FF0000000000000LL) == 0x7FF0000000000000LL
+	if not ffi.istype("int64_t", source) then
+		hn_report_failure("`%s` should be type `f64`", 2, source)
+
+		return
+	end
+
+	-- An arithmetic `f64` nan has every exponent bit set and the most
+	-- significant mantissa bit set; the remaining payload is unspecified.
+	if bit_and(source, 0x7FF8000000000000LL) ~= 0x7FF8000000000000LL then
+		hn_report_failure("`%s` should be an arithmetic `f64` nan", 2, string.upper(bit.tohex(source)))
+	end
 end
 
 -- SECTION assert_equal_f64
+-- NEEDS bit
 -- NEEDS ffi
 -- NEEDS from_bits_f64
 -- NEEDS report_failure
@@ -189,11 +260,11 @@ function hn_assert_equal_f64(target)
 			hn_report_failure("`%s` should be type `f64`", 2, source)
 		elseif source ~= target then
 			hn_report_failure(
-				"`%016X` (%s) should equal `%016X` (%s)",
+				"`%s` (%s) should equal `%s` (%s)",
 				2,
-				source,
+				string.upper(bit.tohex(source)),
 				from_bits_f64(source),
-				target,
+				string.upper(bit.tohex(target)),
 				from_bits_f64(target)
 			)
 		end

@@ -17,6 +17,10 @@ luau-printer = { path = "../Targets/Luau/Printer" }
 luajit-builder = { path = "../Targets/LuaJIT/Builder" }
 luajit-printer = { path = "../Targets/LuaJIT/Printer" }
 
+luanoffi-builder = { path = "../Targets/LuaNoFFI/Builder" }
+luanoffi-printer = { path = "../Targets/LuaNoFFI/Printer" }
+luanoffi-tree = { path = "../Targets/LuaNoFFI/Tree" }
+
 datatest-stable = "0.3.2"
 wast = "222.0.0"
 
@@ -26,4 +30,8 @@ harness = false
 
 [[test]]
 name = "luajit"
+harness = false
+
+[[test]]
+name = "luanoffi"
 harness = false

@@ -3,6 +3,11 @@ local environment = {}
 local named = {}
 local selected = nil
 
+-- SECTION bits_u32
+local function hn_bits_u32(source)
+	return source % 4294967296
+end
+
 -- SECTION spectest
 -- NEEDS environment
 -- NEEDS from_bits_f32
@@ -25,7 +30,7 @@ do
 	spectest.print = print
 
 	function spectest.print_i32(argument)
-		print(string.format("I32 `0x%08X`", argument))
+		print(string.format("I32 `0x%08X`", argument % 4294967296))
 	end
 
 	function spectest.print_i64(argument)
@@ -47,7 +52,7 @@ do
 	function spectest.print_i32_f32(argument_1, argument_2)
 		argument_2 = from_bits_f32(argument_2)
 
-		print(string.format("I32 `0x%08X`, F32 `%g`", argument_1, argument_2))
+		print(string.format("I32 `0x%08X`, F32 `%g`", argument_1 % 4294967296, argument_2))
 	end
 
 	function spectest.print_f64_f64(argument_1, argument_2)
@@ -58,7 +63,9 @@ do
 end
 
 -- SECTION report_failure
-local hn_failed_test_count = 0
+-- The counter is a global because every section is printed inside its own
+-- scope, while the harness epilogue reads the count from the chunk itself.
+hn_failed_test_count = 0
 
 function hn_report_failure(content, level, ...)
 	local reason = string.format(content, ...)
@@ -73,7 +80,7 @@ end
 -- NEEDS report_failure
 function hn_assert_ok(callback)
 	xpcall(callback, function(reason)
-		hn_report_failure("%*", 2, reason)
+		hn_report_failure("%s", 2, reason)
 	end)
 end
 
@@ -84,7 +91,7 @@ function hn_assert_trap(reason, callback)
 		return
 	end
 
-	hn_report_failure("should trap: %*", 2, reason)
+	hn_report_failure("should trap: %s", 2, reason)
 end
 
 -- SECTION assert_ref_null
@@ -94,7 +101,7 @@ function hn_assert_ref_null(source)
 		return
 	end
 
-	hn_report_failure("`%*` should be null", 2, source)
+	hn_report_failure("`%s` should be null", 2, tostring(source))
 end
 
 -- SECTION assert_ref_extern
@@ -108,13 +115,22 @@ function hn_assert_ref_extern(source)
 end
 
 -- SECTION assert_equal_i32
+-- NEEDS bits_u32
 -- NEEDS report_failure
 function hn_assert_equal_i32(target)
+	target = hn_bits_u32(target)
+
 	return function(source)
 		if type(source) ~= "number" then
-			hn_report_failure("`%*` should be type `i32`", 2, source)
-		elseif source ~= target then
-			hn_report_failure("`%08X` (%*) should equal `%08X` (%*)", 2, source, source, target, target)
+			hn_report_failure("`%s` should be type `i32`", 2, tostring(source))
+
+			return
+		end
+
+		source = hn_bits_u32(source)
+
+		if source ~= target then
+			hn_report_failure("`%08X` should equal `%08X`", 2, source, target)
 		end
 	end
 end
@@ -126,8 +142,8 @@ function hn_assert_equal_i64(target)
 	local target_1, target_2 = from_bits_i64(target)
 
 	return function(source)
-		if type(source) ~= "number" then
-			hn_report_failure("`%*` should be type `i64`", 2, source)
+		if type(source) ~= "table" then
+			hn_report_failure("`%s` should be type `i64`", 2, tostring(source))
 
 			return
 		end
@@ -136,138 +152,140 @@ function hn_assert_equal_i64(target)
 
 		if source_1 ~= target_1 or source_2 ~= target_2 then
 			hn_report_failure(
-				"`%08X%08X` (%*) should equal `%08X%08X` (%*)",
+				"`%08X%08X` should equal `%08X%08X`",
 				2,
 				source_2,
 				source_1,
-				source,
 				target_2,
-				target_1,
-				target
+				target_1
 			)
 		end
 	end
 end
 
 -- SECTION is_f32_nan_canonical
--- NEEDS bit32_and
+-- NEEDS bits_u32
 -- NEEDS report_failure
 function hn_is_f32_nan_canonical(source)
 	if type(source) ~= "number" then
-		hn_report_failure("`%*` should be type `f32`", 2, source)
+		hn_report_failure("`%s` should be type `f32`", 2, tostring(source))
 
 		return
 	end
 
-	-- The canonical `f32` nan has every exponent bit set, the most significant
-	-- mantissa bit set and every other mantissa bit clear.
-	if bit32_and(source, 0x7FFFFFFF) ~= 0x7FC00000 then
-		hn_report_failure("`%08X` should be a canonical `f32` nan", 2, source)
+	local bits = hn_bits_u32(source) % 2147483648
+
+	if bits ~= 2139095040 + 4194304 then
+		hn_report_failure("`%08X` should equal canonical `f32` nan", 2, bits)
 	end
 end
 
 -- SECTION is_f32_nan_arithmetic
--- NEEDS bit32_and
+-- NEEDS bits_u32
 -- NEEDS report_failure
 function hn_is_f32_nan_arithmetic(source)
 	if type(source) ~= "number" then
-		hn_report_failure("`%*` should be type `f32`", 2, source)
+		hn_report_failure("`%s` should be type `f32`", 2, tostring(source))
 
 		return
 	end
 
-	-- An arithmetic `f32` nan has every exponent bit set and the most
-	-- significant mantissa bit set; the remaining payload is unspecified.
-	if bit32_and(source, 0x7FC00000) ~= 0x7FC00000 then
-		hn_report_failure("`%08X` should be an arithmetic `f32` nan", 2, source)
+	local bits = hn_bits_u32(source) % 2147483648
+
+	if bits < 2139095040 + 4194304 then
+		hn_report_failure("`%08X` should equal arithmetic `f32` nan", 2, bits)
 	end
 end
 
 -- SECTION assert_equal_f32
+-- NEEDS bits_u32
 -- NEEDS from_bits_f32
 -- NEEDS report_failure
 function hn_assert_equal_f32(target)
+	target = hn_bits_u32(target)
+
 	return function(source)
 		if type(source) ~= "number" then
-			hn_report_failure("`%*` should be type `f32`", 2, source)
-		elseif source ~= target then
+			hn_report_failure("`%s` should be type `f32`", 2, tostring(source))
+
+			return
+		end
+
+		source = hn_bits_u32(source)
+
+		if source ~= target then
 			hn_report_failure(
-				"`%08X` (%*) should equal `%08X` (%*)",
+				"`%08X` (%s) should equal `%08X` (%s)",
 				2,
 				source,
-				from_bits_f32(source),
+				tostring(from_bits_f32(source)),
 				target,
-				from_bits_f32(target)
+				tostring(from_bits_f32(target))
 			)
 		end
 	end
 end
 
 -- SECTION is_f64_nan_canonical
--- NEEDS bit32_and
--- NEEDS from_bits_i64
+-- NEEDS into_bits_f64
 -- NEEDS report_failure
 function hn_is_f64_nan_canonical(source)
 	if type(source) ~= "number" then
-		hn_report_failure("`%*` should be type `f64`", 2, source)
+		hn_report_failure("`%s` should be type `f64`", 2, tostring(source))
 
 		return
 	end
 
-	local source_1, source_2 = from_bits_i64(source)
+	local source_1, source_2 = into_bits_f64(source)
 
-	-- The canonical `f64` nan has every exponent bit set, the most significant
-	-- mantissa bit set and every other mantissa bit clear.
-	if bit32_and(source_2, 0x7FFFFFFF) ~= 0x7FF80000 or source_1 ~= 0x00000000 then
-		hn_report_failure("`%08X%08X` should be a canonical `f64` nan", 2, source_2, source_1)
+	source_2 = source_2 % 2147483648
+
+	if source_1 ~= 0 or source_2 ~= 2146435072 + 524288 then
+		hn_report_failure("`%08X%08X` should equal canonical `f64` nan", 2, source_2, source_1)
 	end
 end
 
 -- SECTION is_f64_nan_arithmetic
--- NEEDS bit32_and
--- NEEDS from_bits_i64
+-- NEEDS into_bits_f64
 -- NEEDS report_failure
 function hn_is_f64_nan_arithmetic(source)
 	if type(source) ~= "number" then
-		hn_report_failure("`%*` should be type `f64`", 2, source)
+		hn_report_failure("`%s` should be type `f64`", 2, tostring(source))
 
 		return
 	end
 
-	local _, source_2 = from_bits_i64(source)
+	local source_1, source_2 = into_bits_f64(source)
 
-	-- An arithmetic `f64` nan has every exponent bit set and the most
-	-- significant mantissa bit set; the remaining payload is unspecified.
-	if bit32_and(source_2, 0x7FF80000) ~= 0x7FF80000 then
-		hn_report_failure("`%08X` should be an arithmetic `f64` nan", 2, source_2)
+	source_2 = source_2 % 2147483648
+
+	if source_2 < 2146435072 + 524288 then
+		hn_report_failure("`%08X%08X` should equal arithmetic `f64` nan", 2, source_2, source_1)
 	end
 end
 
 -- SECTION assert_equal_f64
--- NEEDS from_bits_i64
+-- NEEDS into_bits_f64
 -- NEEDS report_failure
-function hn_assert_equal_f64(target)
-	local target_1, target_2 = from_bits_i64(target)
-
+function hn_assert_equal_f64(target_1, target_2)
 	return function(source)
 		if type(source) ~= "number" then
-			hn_report_failure("`%*` should be type `f64`", 2, source)
+			hn_report_failure("`%s` should be type `f64`", 2, tostring(source))
 
 			return
 		end
 
-		local source_1, source_2 = from_bits_i64(source)
+		local source_1, source_2 = into_bits_f64(source)
 
 		if source_1 ~= target_1 or source_2 ~= target_2 then
 			hn_report_failure(
-				"`%08X%08X` (%*) should equal `%08X%08X` (%*)",
+				"`%08X%08X` (%s) should equal `%08X%08X`",
 				2,
 				source_2,
 				source_1,
-				source,
+				tostring(source),
 				target_2,
-				target_1,
-				target
+				target_1
 			)
 		end
 	end

@@ -26,6 +26,9 @@ use wast::{
 
 use common::{compiler::Compiler, process, visitor::Visitor};
 
+use luanoffi_builder as _;
+use luanoffi_printer as _;
+use luanoffi_tree as _;
 use luau_builder as _;
 use luau_printer as _;
 

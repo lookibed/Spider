@@ -10,7 +10,9 @@ fn poll_until_timeout(child: &mut Child, duration: Duration) -> Result<ExitStatu
 	let now = Instant::now();
 
 	while now.elapsed() < duration {
-		std::thread::yield_now();
+		// Sleeping instead of yielding keeps hundreds of concurrent pollers
+		// from starving the interpreters they are waiting on.
+		std::thread::sleep(Duration::from_millis(2));
 
 		if let Some(status) = child.try_wait()? {
 			return Ok(status);
@@ -38,7 +40,7 @@ fn push_all_output(child: Child, out: &mut String) -> Result<()> {
 }
 
 pub fn run(path: &OsStr, arguments: &[&OsStr]) -> Result<Box<str>> {
-	const TEST_TIMEOUT: Duration = Duration::from_secs(4);
+	const TEST_TIMEOUT: Duration = Duration::from_secs(10);
 
 	let mut child = Command::new(path)
 		.args(arguments)
