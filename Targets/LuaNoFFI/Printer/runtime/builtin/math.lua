@@ -21,3 +21,9 @@ local math_fmod = math.fmod
 
 -- SECTION math_modf
 local math_modf = math.modf
+
+-- SECTION math_huge
+local math_huge = math.huge
+
+-- SECTION math_log
+local math_log = math.log

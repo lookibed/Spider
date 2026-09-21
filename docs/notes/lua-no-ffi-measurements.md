@@ -10,6 +10,14 @@ The goal is not microbenchmark precision. These numbers are meant to answer prac
 
 Last refreshed: `2026-04-22`
 
+> **`2026-09-21`: the runtime table below predates the packed-word memory transition and is no
+> longer current for `lua-no-ffi`.** Linear memory moved from a byte overlay to a packed array of
+> 32-bit words with a signed load contract, and the `binary32` conversions dropped `math.frexp`.
+> The size table is still accurate, but every runtime figure is now pessimistic —
+> `chipmunk_hash_scene(600)` alone improves `9.4x`. See [§11 of the transition
+> results](lua-no-ffi-performance-hypotheses.md#11-transition-results) for the full A/B, and the
+> dated row set below for the fixtures that were re-measured.
+
 ## Method
 
 - Source counts use the compiled C inputs for each fixture, not every file in the upstream repo.
@@ -72,6 +80,58 @@ That last point matters a lot for `lua-no-ffi`, because parse/load time is part 
 | `real-world-plmpeg-stream-host-all` | `host_stream_main.lua 12` on `fixtures/sample.m1v` | `40.38 ms` | `1168.06 ms` | `28.93x` |
 | `real-world-plmpeg-host` | `host_main.lua --all-frames 100` on `fixtures/fhd_5s_testsrc2.m1v` | `42518.67 ms` | `860533.80 ms` | `20.24x` |
 | `real-world-plmpeg-stream-host` | `host_stream_main.lua 100` on `fixtures/fhd_5s_testsrc2.m1v` | `1960.14 ms` | `51550.41 ms` | `26.30x` |
+
+## Runtime Table, `2026-09-21` Packed-Word Update
+
+Re-measured on Linux (WSL2), `LuaJIT 2.1.0-beta3`, against a build of commit `aa08225` — the
+immediate predecessor of the transition — in a separate target directory. Variants were installed
+round-robin, minimum of five runs each, and the installed module was re-checked against a variant
+marker before and after every timing.
+
+These are **not** comparable with the table above: that one is a Windows machine, `3`-run averages,
+and in several cases different iteration counts. Compare `before` with `after` inside this table only.
+
+In-process kernels — module loaded once, export warmed, minimum `os.clock` of five calls:
+
+| Fixture | Compared operation | before | after | speed-up |
+| --- | --- | ---: | ---: | ---: |
+| `real-world-chipmunk` | `chipmunk_hash_scene(60)` | `959.1 ms` | `15.6 ms` | `61.3x` |
+| `real-world-chipmunk` | `chipmunk_hash_scene(600)` | `29 681 ms` | `3 147 ms` | `9.43x` |
+| `real-world-lodepng` | `lodepng_roundtrip_hash(0)` | `140.8 ms` | `29.7 ms` | `4.73x` |
+| `real-world-binjgb` | `binjgb_decode_hash(16)` | `2 219.0 ms` | `597.6 ms` | `3.71x` |
+| `real-world-tinyexpr` | `tinyexpr_hash(256)` | `4.07 ms` | `2.55 ms` | `1.59x` |
+| `real-world-miniz` | `miniz_roundtrip_hash(6)` | `0.077 ms` | `0.085 ms` | `0.90x` |
+
+`chipmunk_hash_scene(600)` is the workload this note records above at `691x` slower than `wasmtime`.
+Against the same `37.40 ms` anchor it is now about `84x`. The `tinyexpr` and `miniz` kernels run in
+`4 ms` and `80 µs` and are at the timing floor; treat them as "`1.6x`–`3.5x`" and "no change".
+
+Whole process, including startup and module load/parse, which is the cost a user actually pays:
+
+| Fixture | Command | before | after | speed-up | RSS before | RSS after |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| `real-world-chipmunk` | `main.lua lua-no-ffi 60` | `5.45 s` | `0.35 s` | `15.57x` | `16.1 MB` | `21.8 MB` |
+| `chipmunk-profile` | `main.lua` | `5.36 s` | `0.64 s` | `8.37x` | `17.4 MB` | `25.2 MB` |
+| `real-world-binjgb` | `main.lua lua-no-ffi 16` | `6.62 s` | `1.63 s` | `4.06x` | `26.2 MB` | `291.8 MB` |
+| `real-world-miniz` | `main.lua` | `0.10 s` | `0.03 s` | `3.33x` | `12.5 MB` | `5.6 MB` |
+| `real-world-lodepng` | `main.lua lua-no-ffi 0` | `0.54 s` | `0.19 s` | `2.84x` | `20.8 MB` | `42.4 MB` |
+| `real-world-lodepng` | `main.lua lua-no-ffi 1` | `0.66 s` | `0.24 s` | `2.75x` | `24.3 MB` | `45.6 MB` |
+| `self-hosting-luanoffi-builder` | `main.lua lua-no-ffi` | `0.16 s` | `0.08 s` | `2.00x` | `8.3 MB` | `18.9 MB` |
+| `real-world-gltf-rs` | `main.lua` | `0.10 s` | `0.09 s` | `1.11x` | `9.9 MB` | `24.9 MB` |
+| `real-world-tinyexpr` | `main.lua 200000` | `0.54 s` | `0.50 s` | `1.08x` | `6.1 MB` | `6.4 MB` |
+
+Three caveats worth carrying forward:
+
+- **Memory moves in both directions.** A word array costs a flat `2.00x` of the *declared* linear
+  memory, whatever fraction of it is touched. `miniz` declares little and writes it densely, so it
+  now uses `0.45x` the RSS; `binjgb` declares `64 MiB` and touches a fraction of it, so it uses
+  `11.1x`. The `binjgb` figure is the one open regression from the transition.
+- **Small fixtures are startup-bound.** `tinyexpr` at `200 000` iterations still spends most of its
+  half second loading a `229 KB` Lua module, which is why its whole-process row reads `1.08x` while
+  its kernel row reads `1.59x`.
+- **Size is essentially unchanged.** Every module grows by the same `~5 KB` of runtime library text:
+  `+0.1%` to `+2.1%` for the `22` modules above `200 KB`, and up to `+35.7%` for `hash_loop.lua`,
+  which is `7.5 KB` in total. The size table above still stands.
 
 ## Notes Per Fixture
 

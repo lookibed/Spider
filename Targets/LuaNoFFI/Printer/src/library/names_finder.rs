@@ -423,7 +423,7 @@ impl NeedsName for MemoryLoad {
 			LoadType::I32_U8 => "load_i32_from_u8",
 			LoadType::I32_S16 => "load_i32_from_s16",
 			LoadType::I32_U16 => "load_i32_from_u16",
-			LoadType::I32 => "buffer_read_u32",
+			LoadType::I32 => "buffer_read_i32",
 			LoadType::I64_S8 => "load_i64_from_s8",
 			LoadType::I64_U8 => "load_i64_from_u8",
 			LoadType::I64_S16 => "load_i64_from_s16",

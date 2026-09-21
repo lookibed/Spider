@@ -315,7 +315,7 @@ mod tests {
 		for name in [
 			"transmute_n32",
 			"transmute_n64",
-			"buffer_write_u32",
+			"buffer_write_i32",
 			"bit32_lrotate",
 			"bit32_rrotate",
 			"from_bits_f32",

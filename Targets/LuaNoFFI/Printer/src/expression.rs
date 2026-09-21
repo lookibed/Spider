@@ -861,7 +861,7 @@ impl Print for MemoryLoad {
 		} = self;
 
 		if matches!(kind, I32) {
-			write!(out, "buffer_read_u32(")?;
+			write!(out, "buffer_read_i32(")?;
 			reference.print(printer, out)?;
 			write!(out, "[1], ")?;
 		} else {

@@ -1,5 +1,5 @@
 -- SECTION memory_type
--- In LuaNoFFI, we use a table-based approach instead of buffer
+-- In LuaNoFFI, we use a table-based approach instead of an FFI array
 -- Memory = { data_table, maximum }
 
 -- SECTION memory_new
@@ -48,9 +48,9 @@ local function rt_load_i32_from_u16(source, base, offset)
 end
 
 -- SECTION load_i32
--- NEEDS buffer_read_u32
+-- NEEDS buffer_read_i32
 local function rt_load_i32(source, base, offset)
-	local result = buffer_read_u32(source[1], base, offset)
+	local result = buffer_read_i32(source[1], base, offset)
 
 	return result
 end
@@ -113,33 +113,33 @@ local function rt_load_i64_from_s32(source, base, offset)
 end
 
 -- SECTION load_i64_from_u32
--- NEEDS buffer_read_u32
+-- NEEDS buffer_read_i32
 -- NEEDS into_bits_i64
 local function rt_load_i64_from_u32(source, base, offset)
-	local val = buffer_read_u32(source[1], base, offset)
+	local val = buffer_read_i32(source[1], base, offset)
 
 	return into_bits_i64(val, 0)
 end
 
 -- SECTION load_i64
 -- NEEDS buffer_check
--- NEEDS buffer_read_u32
+-- NEEDS buffer_read_i32
 -- NEEDS into_bits_i64
 local function rt_load_i64(source, base, offset)
 	local memory = source[1]
 
 	buffer_check(memory, base, offset, 8)
 
-	local lo = buffer_read_u32(memory, base, offset)
-	local hi = buffer_read_u32(memory, base, offset + 4)
+	local lo = buffer_read_i32(memory, base, offset)
+	local hi = buffer_read_i32(memory, base, offset + 4)
 
 	return into_bits_i64(lo, hi)
 end
 
 -- SECTION load_f32
--- NEEDS buffer_read_u32
+-- NEEDS buffer_read_i32
 local function rt_load_f32(source, base, offset)
-	return buffer_read_u32(source[1], base, offset)
+	return buffer_read_i32(source[1], base, offset)
 end
 
 -- SECTION load_f64
@@ -161,9 +161,9 @@ local function rt_store_i32_into_i16(destination, base, offset, source)
 end
 
 -- SECTION store_i32
--- NEEDS buffer_write_u32
+-- NEEDS buffer_write_i32
 local function rt_store_i32(destination, base, offset, source)
-	buffer_write_u32(destination[1], base, offset, source)
+	buffer_write_i32(destination[1], base, offset, source)
 end
 
 -- SECTION store_i64_into_i8
@@ -185,31 +185,31 @@ local function rt_store_i64_into_i16(destination, base, offset, source)
 end
 
 -- SECTION store_i64_into_i32
--- NEEDS buffer_write_u32
+-- NEEDS buffer_write_i32
 -- NEEDS from_bits_i64
 local function rt_store_i64_into_i32(destination, base, offset, source)
 	local lo = from_bits_i64(source)
 
-	buffer_write_u32(destination[1], base, offset, lo)
+	buffer_write_i32(destination[1], base, offset, lo)
 end
 
 -- SECTION store_i64
 -- NEEDS buffer_check
--- NEEDS buffer_write_u32
+-- NEEDS buffer_write_i32
 -- NEEDS from_bits_i64
 local function rt_store_i64(destination, base, offset, source)
 	local memory = destination[1]
 	local lo, hi = from_bits_i64(source)
 
 	buffer_check(memory, base, offset, 8)
-	buffer_write_u32(memory, base, offset, lo)
-	buffer_write_u32(memory, base, offset + 4, hi)
+	buffer_write_i32(memory, base, offset, lo)
+	buffer_write_i32(memory, base, offset + 4, hi)
 end
 
 -- SECTION store_f32
--- NEEDS buffer_write_u32
+-- NEEDS buffer_write_i32
 local function rt_store_f32(destination, base, offset, source)
-	buffer_write_u32(destination[1], base, offset, source)
+	buffer_write_i32(destination[1], base, offset, source)
 end
 
 -- SECTION store_f64
@@ -237,7 +237,7 @@ local function rt_memory_grow(destination, size)
 	local old = buffer_len(destination[1])
 	local new = old + size
 
-	-- Lua numbers index the overlay exactly up to 2^53, but keep memories
+	-- Lua numbers address the word array exactly up to 2^53, but keep memories
 	-- below 2 GiB so byte offsets stay valid `i32` values on every path.
 	if new > destination.maximum or new >= 0x80000000 then
 		return -1

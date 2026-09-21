@@ -691,3 +691,274 @@ not checked in).
 `wasmtime` used: `v24.0.1-x86_64-linux`, invoked with `-C cache=n`.
 Wasm built with `/root/libclang/bin` on `PATH` for `wasm-ld`:
 `clang --target=wasm32 -O2 -nostdlib -Wl,--no-entry -Wl,--export-all -Wl,--allow-undefined`.
+
+---
+
+## 11. Transition results
+
+Written: `2026-09-21`, same host. This section records what was actually landed from
+[§7](#7-ranked-recommendation), the contract each change settled on, and a measured A/B against the
+runtime as of commit `aa08225`.
+
+Unlike the rest of this note, everything below **is** a change to `Targets/LuaNoFFI`.
+
+The scripts for this section live under `scratchpad/` alongside the ones in the appendix:
+`bufcheck/verify.lua` and `f32check/verify.lua` are the two differential correctness harnesses,
+`f32check/bench.lua` the conversion microbenchmark, `sweep2.sh` the marker-checked whole-process A/B,
+`kernels.sh` and `incall.lua` the in-process kernel A/B, and `regen.sh` and `ab.sh` the fixture
+regeneration and variant installation.
+
+### 11.1 What landed
+
+| Step from §9 | Landed | Where |
+| --- | --- | --- |
+| Step 1, `i32` becomes signed | **yes**, folded into step 2 | `builtin/buffer.lua`, `core/memory.lua` |
+| Step 2, packed 32-bit word memory | **yes** | `builtin/buffer.lua`, `core/memory.lua`, `Printer/src/expression.rs`, `library/names_finder.rs` |
+| Step 3, alignment-hint fast path | no | follow-up |
+| Step 4, `f32` as a rounded double | **rejected**, see §11.4 | – |
+| Step 4', Veltkamp split inside the bit-pattern contract | **yes** | `builtin/buffer.lua`, `builtin/math.lua` |
+| Step 5, `i64` as two values | no | follow-up |
+| Step 6, threshold-driven paged memory | no | follow-up, and §11.6 now makes the case for it |
+| Step 7, lazy normalisation, bounds-check elimination | no | follow-up |
+
+### 11.2 Memory representation and the contracts it settled
+
+A memory image is now `{ __n = <byte length>, __w = <word array> }`, where `__w[k]` is a dense,
+one-based array of `bit.tobit` words, four little endian bytes each. The array is preallocated with
+`table.new` (acquired through `pcall(require, "table.new")`, falling back to a plain table) and
+zero-filled, sized `math.floor(n / 4) + 2`. The two slack words let an unaligned access that
+straddles the final word read `__w[i + 1]` without a bounds test of its own.
+
+Four contract decisions, all load-bearing:
+
+1. **32-bit loads return the signed `bit.tobit` form.** This was the decisive result of §6.2, where
+   the unsigned contract was `1.69x` *slower than the byte overlay* it replaced. The helper was
+   renamed `buffer_read_u32` → `buffer_read_i32` and `buffer_write_u32` → `buffer_write_i32`,
+   because the old names now describe the opposite of what they do; the old `buffer_read_i32`
+   wrapper, which existed only to re-sign an unsigned load, is gone. Narrower loads
+   (`buffer_read_u8`, `buffer_read_u16`) stay unsigned, which is not a contradiction: `0 .. 65535`
+   is already a valid signed `i32`.
+
+   Every consumer was audited rather than assumed. `force_u32` and `force_s32` already accepted both
+   signs, so the unsigned comparison, division, remainder, table-index and `f64`-conversion paths
+   needed no change; `into_bits_i64` already applies `% 2 ^ 32`, so `i64` widening and the two-word
+   `i64` load keep unsigned halves; `bit.*` is sign-agnostic. The one path that changes behaviour is
+   **addresses**: a pointer loaded out of memory with the high bit set used to be a huge positive
+   number that tripped `index + size > __n`, and is now negative and trips `base < 0`. Both trap,
+   and memories are capped below 2 GiB by `rt_memory_grow`, so no in-bounds address can be negative.
+
+   A happy side effect: `rt_load_f32` used to return an *unsigned* bit pattern while
+   `into_bits_f32` produced a *signed* one, so the same `f32` value had two spellings depending on
+   where it came from. It now has one.
+
+2. **Zero initialisation is dense, never lazy.** §6.4 measured lazy page materialisation at
+   `2.7x`–`17.5x` slower than a flat array, and the `pg or zero` read fallback was the cause. The
+   same reasoning rules out a sparse array with an `or 0` fallback on every read, so the word array
+   is fully written at creation. §4.2 measured that cost at `0.0209 s` per 16 MiB.
+
+3. **The byte view survived.** The study's `patch_words.py` deleted `buffer_meta`, but that
+   metatable is the *host* interface: `tests/manual/*/host_main.lua` and
+   `real-world-gltf-rs/main.lua` read and write linear memory as `memory[1][address + 1]`. It is
+   reimplemented over the words, so `__index`, `__newindex` and `__len` still present a one-based
+   byte array. Because `__n` and `__w` are always present as raw fields, no metamethod is consulted
+   on the hot path, and the measured speed-ups below are unaffected.
+
+4. **`memory.grow` extends, never reallocates.** `buffer_resize` zero-fills the new word slots and
+   only then publishes `__n`, so a failed allocation leaves the memory exactly as it was. This is
+   the §4.2 "incremental growth" row, and it avoids the `2x` peak-RSS spike of the
+   double-and-copy row.
+
+`buffer_copy` keeps `memmove` semantics with a word-wide fast path, generalised slightly beyond the
+reference in `patch_words.py`: the fast path now triggers whenever the two addresses share an
+alignment (`band(bxor(dst, src), 3) == 0`), copying a byte head, then whole words, then a byte tail,
+instead of requiring both to be word-aligned. `buffer_fill` fills word-wise around a byte head and
+tail. `buffer_writestring`, which lays down data segments at module start-up, assembles whole words
+from `string.byte(str, p, p + 3)`.
+
+### 11.3 Correctness evidence for the memory change
+
+A randomised differential check (`scratchpad/bufcheck/verify.lua`) drives twelve memory sizes,
+including deliberately non-multiple-of-four ones (`1, 3, 5, 7, 17, 257, 4093`), with `4000` random
+operations each drawn from `write_u8`, `write_u16`, `write_i32` (both signs of the incoming value),
+`fill`, `copy`, `writestring`, the metatable byte view and `write_f32`, against an independent
+byte-array model. It then reads the whole memory back in every width, at every address, including
+through folded static offsets, and repeats for grown memories, `300` overlapping same-memory copies,
+`200` cross-memory copies, and `16` bounds cases that must trap without a partial write.
+**183 833 checks, 0 failures.**
+
+### 11.4 `f32`: why the representation did not change
+
+§5.2 recommends carrying `f32` as a double rounded with the Veltkamp split, worth `13.4x`. **That is
+rejected here, on conformance grounds that the study did not test for.**
+
+A Lua double cannot carry a `binary32` NaN payload, nor the sign of a NaN. `Conformance/Suite/f32.wast`
+contains `466` `nan:0x...` assertions and **passes today**; `f32_bitwise.wast` asserts that
+`copysign(±0, -nan)` differs from `copysign(±0, nan)` and also passes today. The proof that this
+would break is already in the failure set: `f64_bitwise.wast` fails *precisely because* `f64` is
+carried as a native Lua double and loses exactly those bits. Carrying `f32` the same way would move
+`f32.wast` and `f32_bitwise.wast` from passing to failing, taking the suite below the `280/312`
+gate.
+
+So `f32` stays a bit pattern between operations, and the split was applied *inside* the conversion
+instead. `into_bits_f32` no longer calls `math.frexp` — which §1 confirmed is NYI and stitches every
+trace — and no longer runs a hand-written `round_to_even`. It rounds with the Veltkamp split for
+normals and with a `1.5 * 2 ^ 52 * 2 ^ -149` magic add for subnormals, then reads the exponent from
+`math.log`, corrected by at most one step, and indexes a precomputed `2 ^ k` table instead of
+evaluating `2 ^ exponent`. `from_bits_f32` replaces its `%` chain and `2 ^ exponent` with `bit` ops
+and the same table.
+
+| Kernel (2M ops, min of 5) | before | after | JIT | before | after | JIT off |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `into_bits_f32` | `0.3163` | **`0.0359`** | **`8.81x`** | `0.0356` | `0.0200` | `1.78x` |
+| `from_bits_f32` | `0.0360` | **`0.0169`** | **`2.13x`** | `0.0178` | `0.0168` | `1.06x` |
+| `f32` multiply/add loop (§5.2's `f1`) | `0.6074` | **`0.1159`** | **`5.24x`** | `0.1115` | `0.0844` | `1.32x` |
+
+The `5.24x` is `39%` of the `13.4x` the representation change would have bought, at none of its
+correctness cost. It also beats the `4.64x` §5.2 projected for the `log2` exponent alone, because
+dropping `round_to_even` and the `2 ^ exponent` call compound with it.
+
+Correctness: `scratchpad/f32check/verify.lua` compares the new conversions against **both** the
+implementation they replace **and** a real C `float` cast, over `400 000` random doubles spanning
+`2^-200 .. 2^200`, `100 000` concentrated in the subnormal band, `50 000` around the overflow
+boundary, `400 000` random bit patterns, every exponent × four mantissas in both signs, `200 000`
+bits → double → bits round trips, and the hand-picked edges from §5.2. **1 151 280 checks, 0
+failures**, including `±0` sign, `2^-149`, `2^-150`, `2^128 - 2^103` and the NaN canonicalisation.
+
+One incidental finding, worth recording because it bites anyone writing such a test: reading a
+`binary32` NaN back out of an FFI `float[1]` slot can produce a value LuaJIT's NaN boxing reports as
+`userdata`, because the widened payload collides with a type tag. The runtime never does this — it
+returns `0 / 0` — but a reference harness must skip NaN patterns.
+
+### 11.5 A/B against commit `aa08225`
+
+The baseline is commit `aa08225`, the immediate predecessor of this change. That matters: `aa08225`
+landed an optimizer and lifter rework that alters **unoptimized** output too — `25` of the `28`
+fixture modules differ between `60bcc1f` and `aa08225` — so baselining against `60bcc1f` would have
+credited this change with someone else's work. An earlier sweep in this session did exactly that and
+has been discarded.
+
+Both CLIs were built into separate target directories from separate `git worktree`s, and every
+fixture module was regenerated from its checked-in `.wasm` by each. Variants were installed
+round-robin, one full pass per repetition, minimum of five, and **the installed module is re-checked
+against a variant marker before and after every timing** — a concurrent regeneration by another
+agent silently contaminated an earlier sweep, and that check is what caught it. The final sweeps
+record `0` contamination events and `5/5` valid samples on every row.
+
+Whole process, `/usr/bin/time`, wall-clock minimum of 5, max RSS over the 5:
+
+| Fixture | before | after | speed-up | RSS before | RSS after | RSS ratio |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `real-world-chipmunk` `60` | `5.45 s` | **`0.35 s`** | **`15.57x`** | `16 064 KB` | `21 768 KB` | `1.36x` |
+| `chipmunk-profile` | `5.36 s` | **`0.64 s`** | **`8.37x`** | `17 416 KB` | `25 212 KB` | `1.45x` |
+| `real-world-binjgb` `16` | `6.62 s` | **`1.63 s`** | **`4.06x`** | `26 224 KB` | `291 836 KB` | **`11.13x`** |
+| `real-world-miniz` | `0.10 s` | `0.03 s` | `3.33x` | `12 520 KB` | `5 632 KB` | **`0.45x`** |
+| `real-world-lodepng` `0` | `0.54 s` | `0.19 s` | `2.84x` | `20 808 KB` | `42 416 KB` | `2.04x` |
+| `real-world-lodepng` `1` | `0.66 s` | `0.24 s` | `2.75x` | `24 316 KB` | `45 616 KB` | `1.88x` |
+| `self-hosting-luanoffi-builder` | `0.16 s` | `0.08 s` | `2.00x` | `8 344 KB` | `18 948 KB` | `2.27x` |
+| `real-world-gltf-rs` | `0.10 s` | `0.09 s` | `1.11x` | `9 948 KB` | `24 852 KB` | `2.50x` |
+| `real-world-tinyexpr` `200000` | `0.54 s` | `0.50 s` | `1.08x` | `6 100 KB` | `6 432 KB` | `1.05x` |
+
+In-process kernels — module loaded once, export warmed, minimum `os.clock` of five calls, Lua heap
+after a full collection. These are what compare directly with §6.4:
+
+| Kernel | before | after | speed-up | §6.4 predicted | heap before | heap after |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `chipmunk_hash_scene(60)` | `0.95914 s` | **`0.01564 s`** | **`61.3x`** | `45.9x` | `5 174 KB` | `10 097 KB` |
+| `chipmunk_hash_scene(600)` | `29.681 s` | **`3.147 s`** | **`9.43x`** | – | `5 187 KB` | `10 284 KB` |
+| `lodepng_roundtrip_hash(0)` | `0.14079 s` | **`0.02975 s`** | **`4.73x`** | `3.88x` | `9 479 KB` | `35 622 KB` |
+| `binjgb_decode_hash(16)` | `2.2190 s` | **`0.5976 s`** | **`3.71x`** | – | `9 987 KB` | `134 260 KB` |
+| `tinyexpr_hash(256)` | `0.004071 s` | `0.002546 s` | `1.59x` | `4.34x` | `867 KB` | `1 711 KB` |
+| `miniz_roundtrip_hash(6)` | `0.000077 s` | `0.000085 s` | `0.90x` | `1.03x` | `5 241 KB` | `3 009 KB` |
+
+The `chipmunk` and `lodepng` rows reproduce §6.4 within the note's own `±35%` drift band, and the
+heap deltas match it almost exactly (§6.4: `5 399 → 10 056 KB` and `9 600 → 35 636 KB`). That is the
+strongest available evidence that the shipped implementation is the one the study measured.
+
+Two rows need their error bars stated rather than their point estimate believed:
+
+- `tinyexpr_hash(256)` runs in `4 ms`, close to the timing floor. A second sample of the identical
+  kernel earlier in the session read `3.47x`. Treat its range as `1.6x`–`3.5x`.
+- `miniz_roundtrip_hash(6)` runs in `80 µs`. Its `0.90x` and §6.4's `1.03x` are the same
+  measurement — "no change" — and the fixture's whole-process row reads `3.33x` because start-up,
+  not the kernel, is what the word memory speeds up there. `miniz` is the byte-serial case §6.1
+  predicted would be a wash, and it is.
+
+`chipmunk_hash_scene(600)` earns its own row because it is the workload
+`lua-no-ffi-measurements.md` records at `691x` slower than `wasmtime`. At `3.147 s` against that
+note's `37.40 ms` `wasmtime` anchor it is now about `84x`. The speed-up shrinks from `61x` at `60`
+iterations to `9.4x` at `600` because the overlay's write density rises with the iteration count: by
+`600` iterations its `__d` table has been promoted into LuaJIT's array part, which §4.1 identified as
+the overlay's best case and §6.1 as the regime where representation barely matters.
+
+With the JIT off, minimum over three interleaved passes of three calls each:
+
+| Kernel | before | after | ratio |
+| --- | ---: | ---: | ---: |
+| `tinyexpr_hash(256)` | `0.017709 s` | `0.016183 s` | `1.09x` |
+| `chipmunk_hash_scene(20)` | `0.073410 s` | `0.071566 s` | `1.03x` |
+| `lodepng_roundtrip_hash(0)` | `0.164320 s` | `0.164947 s` | `1.00x` |
+| `miniz_roundtrip_hash(6)` | `0.002145 s` | `0.002372 s` | `0.90x` |
+
+The interpreter is a wash, `0.90x`–`1.09x`, which is the honest reading of §2.1: words win on aligned
+32/64-bit access and lose on bytes, and with the JIT off both effects are amplified because every
+`bit.*` call is a real interpreter call. An earlier, smaller-workload pass read `0.82x` on
+`chipmunk`; at those sizes the measurement is below its own noise floor, so the table above uses
+workloads large enough to mean something.
+
+Generated module size grows by a fixed `~5 KB` of runtime library text and nothing else. For the
+`22` modules above `200 KB` that is `+0.1%` to `+2.1%`. The small comparison fixtures pay it
+proportionally — `hash_loop.lua` goes `7 504 → 10 182` bytes, `+35.7%` — which matters only because
+module parse time is their dominant cost.
+
+### 11.6 The one regression, and what it argues for
+
+`binjgb` declares `67 305 472` bytes of linear memory and touches a small fraction of it. Its RSS
+goes from `26 MB` to `292 MB`. Of that, `134 MB` is the word array itself, measured directly at load
+time (`129.2 MB` of Lua heap, `134.7 MB` RSS, against `1.3 MB` and `4.4 MB` for the overlay) and
+exactly the `2.00x` of declared size §4.1 predicts. The rest is LuaJIT's default GC pause of `200%`,
+which lets a `129 MB` live set accumulate a similar amount of garbage before collecting.
+
+This is §6.4's "the memory direction flips with density" arriving in a real fixture, and it is the
+strongest argument yet for §7.1's second recommendation: **eager 64 KiB word pages above a
+declared-size threshold**. §6.4 measured eager pages within `1.2x`–`1.8x` of the flat array at the
+same footprint, and a paged layout is also the only one from which untouched regions could later be
+reclaimed. It is not needed for correctness and was deliberately left out of this transition, but
+`binjgb` is now the fixture that justifies it.
+
+Note the opposite sign on `miniz`: its memory is small and densely written, so words use `0.45x` the
+RSS of the overlay. Both directions are real, and §6.4's estimated break-even write density of
+`12–25%` holds up.
+
+### 11.7 Gates
+
+- `cargo test -p conformance --test luanoffi`: `280 passed / 32 failed`. The failing set, the
+  per-file failure counts **and the exact failure messages** — `360` failing assertions across `32`
+  files — are byte-identical to commit `60bcc1f` and to commit `aa08225`. The comparison is against
+  full logs taken from `git worktree`s of those commits, not against a remembered summary.
+- `cargo test -p conformance --test luajit`: `312 passed / 0 failed`.
+- `cargo test --workspace --exclude conformance`, `cargo build --release`, `cargo fmt --check`,
+  `cargo clippy --all-targets`: clean.
+- Every fixture gate — `tinyexpr`, `miniz`, `lodepng` variants `0` and `1`, self-hosting,
+  `gltf-rs`, `chipmunk`, `chipmunk-profile`, `binjgb`, `hash-compare`, `i64-compare`,
+  `float-compare` — prints values identical to the committed runtime.
+
+One observation worth recording for whoever next reads a conformance log: a single `aa08225` run
+reported `382` failing assertions instead of `360`, the extra `22` all being `-0.0` and `-inf` sign
+losses in `native_o0::float_exprs.wast`. A rerun of the identical tree reported `360`. **The
+assertion count inside a failing `.wast` is flaky on this host**; the test-level result
+(`280/312`) and the set of failing files were stable across every run of every tree.
+
+### 11.8 Follow-ups this leaves open
+
+1. **Eager paged memory above a declared-size threshold** (§7.1 recommendation 2). `binjgb` is the
+   motivating fixture; see §11.6.
+2. **The alignment-hint fast path** (§9 step 3). Every 32-bit access still tests `shift == 0` at run
+   time although the wasm alignment hint usually settles it statically.
+3. **`i64` as two plain values** (§9 step 5), still the largest single remaining win at `1.9x`–`9.0x`
+   and still the widest blast radius.
+4. **`into_bits_f64`.** Left alone deliberately — §5.2 measured the `log2` variant at `1.04x` under
+   the JIT and `0.63x` in the interpreter. It still calls `math.frexp`, so it still stitches traces,
+   and it remains the last NYI call on the float path. If it is ever rewritten, §5.2's warning
+   stands: scale subnormals as `x * 2 ^ 537 * 2 ^ 537`, because `2 ^ 1074` is not representable.
+5. **Lazy `i32` normalisation and bounds-check elimination** (§9 step 7), both unblocked now that the
+   signed contract is in place.

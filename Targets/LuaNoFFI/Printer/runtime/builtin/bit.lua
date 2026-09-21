@@ -14,6 +14,10 @@ end
 -- NEEDS bit
 local force_i32 = bit.tobit
 
+-- SECTION bit_tobit
+-- NEEDS bit
+local bit_tobit = bit.tobit
+
 -- SECTION bit_and
 -- NEEDS bit
 local bit_and = bit.band
