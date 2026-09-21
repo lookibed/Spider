@@ -13,6 +13,7 @@ pub struct DeadPortEliminator {
 	map: HashMap<Link, Link>,
 
 	seen: Set,
+	stride: usize,
 	stack: Vec<Link>,
 }
 
@@ -24,12 +25,40 @@ impl DeadPortEliminator {
 			map: HashMap::new(),
 
 			seen: Set::new(),
+			stride: 1,
 			stack: Vec::new(),
 		}
 	}
 
+	/// The widest port index the graph uses, plus one.
+	///
+	/// [`Link::into_usize`] spreads a link over the whole sixteen bit port space, which
+	/// would make the dense `seen` set allocate a bit for every port of every node
+	/// whether or not it exists. Sizing the row to the widest port the graph actually
+	/// has keeps that set proportional to the graph instead.
+	fn find_stride(graph: &DataFlowGraph) -> usize {
+		let mut widest = 0;
+
+		for node in graph.nodes() {
+			node.for_each_argument(|Link(_, port)| widest = widest.max(usize::from(port)));
+
+			if let Some(ports) = node.ports_output(graph) {
+				widest = widest.max(ports);
+			}
+		}
+
+		widest + 1
+	}
+
+	/// The index `link` occupies in the `seen` set.
+	const fn key(&self, link: Link) -> usize {
+		let Link(id, port) = link;
+
+		(id as usize) * self.stride + (port as usize)
+	}
+
 	fn add_predecessor(&mut self, link: Link) {
-		if self.seen.grow_insert(link.into_usize()) {
+		if self.seen.grow_insert(self.key(link)) {
 			return;
 		}
 
@@ -38,13 +67,9 @@ impl DeadPortEliminator {
 
 	fn add_region_sides(&mut self, links: &[Link], id: u32) {
 		let len = links.len();
+		let start = self.key(Link(id, 0));
 
-		self.seen.extend(
-			(0..)
-				.map(|port| Link(id, port))
-				.map(Link::into_usize)
-				.take(len),
-		);
+		self.seen.grow_insert_all(start, start + len);
 
 		for &link in links {
 			self.add_predecessor(link);
@@ -205,7 +230,7 @@ impl DeadPortEliminator {
 		let mut outputs = (0..).map(|port| Link(id, port));
 
 		for from in outputs.clone().take(ports) {
-			if !self.seen.contains(from.into_usize()) {
+			if !self.seen.contains(self.key(from)) {
 				continue;
 			}
 
@@ -217,39 +242,57 @@ impl DeadPortEliminator {
 		}
 	}
 
-	fn sweep_inputs(&self, graph: &mut DataFlowGraph, id: u32) {
+	fn sweep_inputs(&self, graph: &mut DataFlowGraph, id: u32) -> bool {
 		let Some(arguments) = graph.get_mut(id).as_mut_ports() else {
-			return;
+			return false;
 		};
 
-		let mut inputs = (0..).map(|port| Link(id, port)).map(Link::into_usize);
+		let mut inputs = (0..).map(|port| self.key(Link(id, port)));
+		let before = arguments.len();
 
 		arguments.retain(|_| self.seen.contains(inputs.next().unwrap()));
+
+		arguments.len() != before
 	}
 
-	fn sweep(&mut self, graph: &mut DataFlowGraph) {
+	fn sweep(&mut self, graph: &mut DataFlowGraph) -> bool {
 		let len = graph.len();
+		let mut changed = false;
 
 		self.map.clear();
 
 		for id in (0..len.try_into().unwrap()).rev() {
 			self.sweep_outputs(graph, id);
-			self.sweep_inputs(graph, id);
+
+			changed |= self.sweep_inputs(graph, id);
 		}
 
 		for node in graph.nodes_mut() {
 			node.for_each_mut_argument(|old| {
-				if let Some(new) = self.map.get(old) {
-					*old = *new;
+				if let Some(&new) = self.map.get(old)
+					&& *old != new
+				{
+					*old = new;
+
+					changed = true;
 				}
 			});
 		}
+
+		changed
 	}
 
 	/// Runs the dead port elimination pass on the graph.
-	pub fn run(&mut self, graph: &mut DataFlowGraph, result: Link) {
+	///
+	/// Returns `true` when a port was removed or a link was renumbered, so the optimizer
+	/// driver can keep iterating until the graph reaches a fixed point.
+	#[must_use = "the optimizer loop needs to know whether the graph changed"]
+	pub fn run(&mut self, graph: &mut DataFlowGraph, result: Link) -> bool {
+		self.stride = Self::find_stride(graph);
+
 		self.mark(graph, result);
-		self.sweep(graph);
+
+		self.sweep(graph)
 	}
 }
 
@@ -313,7 +356,8 @@ mod tests {
 	}
 
 	fn optimize(graph: &mut DataFlowGraph, omega_out: u32) {
-		DeadPortEliminator::new().run(graph, Link(omega_out, 0));
+		let _ = DeadPortEliminator::new().run(graph, Link(omega_out, 0));
+
 		TopologicalNormalizer::new().run(graph, omega_out);
 	}
 

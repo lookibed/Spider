@@ -89,6 +89,81 @@ pub fn simplify_memory(graph: &mut DataFlowGraph, id: u32) -> bool {
 	})
 }
 
+/// Simplifies the node at the given ID, reporting whether a rule matched.
+///
+/// Every rule set is rooted at a single node kind, so only the one rule set that can
+/// possibly match is tried. Dispatching here keeps the cost of a sweep proportional to
+/// the nodes a rule could rewrite rather than to the number of rule sets.
+///
+/// [`simplify_global`], [`simplify_table`] and [`simplify_memory`] are deliberately left
+/// out. They all forward a stored value straight to a later load, which trades one load
+/// for keeping the stored value live over the whole span between the two. This backend
+/// has no register allocator, so those extra live ranges push functions past the Lua
+/// local limit and into the spill table. Measured on `libjpeg_turbo_mjpeg`, forwarding
+/// raised spill sites from 1323 to 1874, and on `lodepng` it made the generated code 29%
+/// slower while saving no calls at all. They remain available to callers that want them.
+pub fn simplify(graph: &mut DataFlowGraph, id: u32) -> bool {
+	match *graph.get(id) {
+		// `SimplifyI32` is rooted at `I32Add` and `I32Sub`.
+		Node::IntegerBinaryOperation(_) => simplify_i32(graph, id),
+		Node::Apply(_)
+		| Node::F32(_)
+		| Node::F64(_)
+		| Node::Fence(_)
+		| Node::GammaIn(_)
+		| Node::GammaOut(_)
+		| Node::GlobalGet(_)
+		| Node::GlobalNew(_)
+		| Node::GlobalSet(_)
+		| Node::Host(_)
+		| Node::I32(_)
+		| Node::I64(_)
+		| Node::Identity(_)
+		| Node::Import(_)
+		| Node::IntegerCompareOperation(_)
+		| Node::IntegerConvertToNumber(_)
+		| Node::IntegerExtend(_)
+		| Node::IntegerNarrow(_)
+		| Node::IntegerTransmuteToNumber(_)
+		| Node::IntegerUnaryOperation(_)
+		| Node::IntegerWiden(_)
+		| Node::LambdaIn(_)
+		| Node::LambdaOut(_)
+		| Node::MemoryCopy(_)
+		| Node::MemoryDrop(_)
+		| Node::MemoryFill(_)
+		| Node::MemoryGrow(_)
+		| Node::MemoryLoad(_)
+		| Node::MemoryNew(_)
+		| Node::MemorySize(_)
+		| Node::MemoryStore(_)
+		| Node::Null
+		| Node::NumberBinaryOperation(_)
+		| Node::NumberCompareOperation(_)
+		| Node::NumberNarrow(_)
+		| Node::NumberTransmuteToInteger(_)
+		| Node::NumberTruncateToInteger(_)
+		| Node::NumberUnaryOperation(_)
+		| Node::NumberWiden(_)
+		| Node::OmegaIn(_)
+		| Node::OmegaOut(_)
+		| Node::RefIsNull(_)
+		| Node::RegionIn(_)
+		| Node::RegionOut(_)
+		| Node::TableCopy(_)
+		| Node::TableDrop(_)
+		| Node::TableFill(_)
+		| Node::TableGet(_)
+		| Node::TableGrow(_)
+		| Node::TableNew(_)
+		| Node::TableSet(_)
+		| Node::TableSize(_)
+		| Node::ThetaIn(_)
+		| Node::ThetaOut(_)
+		| Node::Trap => false,
+	}
+}
+
 #[cfg(test)]
 mod tests {
 	use ir_graph::{

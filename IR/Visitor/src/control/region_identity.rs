@@ -7,34 +7,48 @@ use ir_graph::{
 	simple::Identity,
 };
 
-fn replace_with_producer(graph: &DataFlowGraph, from: &mut Link) {
+fn replace_with_producer(graph: &DataFlowGraph, from: &mut Link) -> bool {
 	let Node::Identity(Identity { sources }) = graph.get(from.0) else {
-		return;
+		return false;
 	};
 
-	*from = sources[usize::from(from.1)];
+	let source = sources[usize::from(from.1)];
+	let changed = *from != source;
+
+	*from = source;
+
+	changed
 }
 
 // We remove all identities, as they are always redundant.
-fn remove_at(graph: &DataFlowGraph, node: &mut Node) {
-	node.for_each_mut_argument(|argument| replace_with_producer(graph, argument));
+fn remove_at(graph: &DataFlowGraph, node: &mut Node) -> bool {
+	let mut changed = false;
+
+	node.for_each_mut_argument(|argument| changed |= replace_with_producer(graph, argument));
+
+	changed
 }
 
 /// Removes all identity nodes from the graph.
 ///
+/// Returns `true` when at least one link was redirected past an identity.
+///
 /// # Panics
 ///
 /// Panics if the graph length overflows a `u32`; if this happens, it is a bug.
-pub fn remove(graph: &mut DataFlowGraph) {
+pub fn remove(graph: &mut DataFlowGraph) -> bool {
 	let len = graph.len();
+	let mut changed = false;
 
 	for id in 0..len.try_into().unwrap() {
 		let mut node = core::mem::take(graph.get_mut(id));
 
-		remove_at(graph, &mut node);
+		changed |= remove_at(graph, &mut node);
 
 		*graph.get_mut(id) = node;
 	}
+
+	changed
 }
 
 fn replace_with_identity(graph: &mut DataFlowGraph, from: &mut Link) {
@@ -47,10 +61,14 @@ fn replace_with_identity(graph: &mut DataFlowGraph, from: &mut Link) {
 // We insert at...
 //   * `RegionOut` arguments, since we need to issue the correct move order.
 //   * `ThetaIn` arguments always, since they are mutable and must produce new locals.
-//   * `ThetaOut` arguments and condition, since we need to issue the correct move order.
+//   * `ThetaOut` arguments, since we need to issue the correct move order.
+//
+// The `ThetaOut` condition is deliberately left alone. It is a predicate the loop tail
+// consumes once, not a value that takes part in the loop carried move order, so forcing
+// it through a local only makes the backend materialize a `0` or `1` and compare it.
 fn insert_at(graph: &mut DataFlowGraph, node: &mut Node) {
 	match node {
-		Node::RegionOut(RegionOut { results, .. }) => {
+		Node::RegionOut(RegionOut { results, .. }) | Node::ThetaOut(ThetaOut { results, .. }) => {
 			for result in results {
 				replace_with_identity(graph, result);
 			}
@@ -58,15 +76,6 @@ fn insert_at(graph: &mut DataFlowGraph, node: &mut Node) {
 		Node::ThetaIn(ThetaIn { arguments, .. }) => {
 			for argument in arguments {
 				replace_with_identity(graph, argument);
-			}
-		}
-		Node::ThetaOut(ThetaOut {
-			results, condition, ..
-		}) => {
-			replace_with_identity(graph, condition);
-
-			for result in results {
-				replace_with_identity(graph, result);
 			}
 		}
 

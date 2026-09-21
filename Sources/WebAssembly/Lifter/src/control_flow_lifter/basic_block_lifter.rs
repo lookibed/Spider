@@ -53,7 +53,11 @@ impl BasicBlockLifter {
 	}
 
 	fn create_fence(&mut self, graph: &mut DataFlowGraph) {
-		let mut sources = alloc::vec![self.trap];
+		// The trap token plus one source per mutable dependency, sized up front so the
+		// fence buffer never has to grow while it is being filled.
+		let mut sources = Vec::with_capacity(self.dependencies.mutable_count() + 1);
+
+		sources.push(self.trap);
 
 		self.dependencies.get_mutable_into(&mut sources);
 
@@ -66,13 +70,16 @@ impl BasicBlockLifter {
 	}
 
 	pub fn get_function_outputs(&mut self, graph: &mut DataFlowGraph, results: usize) -> Vec<Link> {
-		let mut results = self.locals[LOCAL_BASE..LOCAL_BASE + results].to_vec();
+		// One link per result, plus the trap token appended after the fence.
+		let mut links = Vec::with_capacity(results + 1);
+
+		links.extend_from_slice(&self.locals[LOCAL_BASE..LOCAL_BASE + results]);
 
 		self.create_fence(graph);
 
-		results.push(self.trap);
+		links.push(self.trap);
 
-		results
+		links
 	}
 
 	pub fn set_function_inputs(
@@ -120,7 +127,8 @@ impl BasicBlockLifter {
 	}
 
 	pub fn get_active_bindings(&self, locals: &[u16]) -> Vec<Link> {
-		let mut results = Vec::new();
+		// Every dependency, every live local, and the trap token.
+		let mut results = Vec::with_capacity(self.dependencies.count() + locals.len() + 1);
 
 		self.dependencies.get_all_into(&mut results);
 
@@ -222,7 +230,12 @@ impl BasicBlockLifter {
 	}
 
 	fn handle_pre_call(&mut self, graph: &mut DataFlowGraph, from: u16, to: u16) -> Vec<Link> {
-		let mut arguments = self.locals[usize::from(from)..usize::from(to)].to_vec();
+		let (from, to) = (usize::from(from), usize::from(to));
+
+		// One link per argument, plus the trap token appended after the fence.
+		let mut arguments = Vec::with_capacity(to - from + 1);
+
+		arguments.extend_from_slice(&self.locals[from..to]);
 
 		self.create_fence(graph);
 

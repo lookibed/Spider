@@ -7,7 +7,6 @@
 	clippy::wildcard_enum_match_arm,
 	dead_code,
 	non_snake_case,
-	unused_variables,
 	reason = "generated ISLE code does not conform to workspace lint rules"
 )]
 

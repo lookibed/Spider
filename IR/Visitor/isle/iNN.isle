@@ -36,38 +36,19 @@
 	(I32 (raw_sub_i32 lhs rhs))
 )
 
-;; (N + K1) + K2 => N + (K1 + K2)
-(rule 1
-	(SimplifyI32
-		(I32Add
-			(I32Add lhs_1 rhs_1 @ (I32 _))
-			rhs_2 @ (I32 _)
-		)
-	)
-
-	(I32Add lhs_1 (I32Add rhs_1 rhs_2))
-)
-
-;; (N + K1) - K2 => N + (K1 - K2)
-(rule 1
-	(SimplifyI32
-		(I32Sub
-			(I32Add lhs_1 rhs_1 @ (I32 _))
-			rhs_2 @ (I32 _)
-		)
-	)
-
-	(I32Add lhs_1 (I32Sub rhs_1 rhs_2))
-)
-
-;; (N - K1) - K2 => N - (K1 + K2)
-(rule 1
-	(SimplifyI32
-		(I32Sub
-			(I32Sub lhs_1 rhs_1 @ (I32 _))
-			rhs_2 @ (I32 _)
-		)
-	)
-
-	(I32Sub lhs_1 (I32Add rhs_1 rhs_2))
-)
+;; Reassociation of a constant into an enclosing constant is deliberately absent:
+;;
+;;   (N + K1) + K2 => N + (K1 + K2)
+;;   (N + K1) - K2 => N + (K1 - K2)
+;;   (N - K1) - K2 => N - (K1 + K2)
+;;
+;; The arithmetic is sound under wrapping, but these rules change which values stay
+;; live across a region boundary, and the backend then mis-sequences that region's
+;; parallel move. The first of the three miscompiles the `real-world-miniz` fixture
+;; under `-o`: it returns a roundtrip hash of -1997 instead of 58679047, while the
+;; conformance suites still pass. The other two share the mechanism and only avoid
+;; the fixture by luck.
+;;
+;; They are worth restoring once the move ordering is fixed and covered by a test.
+;; Their measured value is small: enabling all three changed `libjpeg_turbo_mjpeg`
+;; by 16 lines and removed 10 `rt_add_i32` calls.

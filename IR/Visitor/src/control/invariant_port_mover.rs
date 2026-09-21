@@ -73,14 +73,39 @@ impl InvariantPortMover {
 		}
 	}
 
+	/// Whether the value behind `link` can be rebuilt at any point for free.
+	///
+	/// A constant reads nothing and depends on nothing, so a consumer can be handed its
+	/// own copy wherever it sits. Anything else has to be kept in a local from the point
+	/// it is produced to the point it is read.
+	fn is_rematerializable(graph: &DataFlowGraph, link: Link) -> bool {
+		matches!(
+			*graph.get(link.0),
+			Node::I32(_) | Node::I64(_) | Node::F32(_) | Node::F64(_) | Node::Null
+		)
+	}
+
 	fn handle_gamma(&mut self, graph: &DataFlowGraph, gamma_out: &GammaOut) {
 		let GammaOut { input, regions } = gamma_out;
 		let GammaIn {
 			output, arguments, ..
 		} = graph.get(*input).as_gamma_in().unwrap();
 
+		// Lifting a value out of a gamma makes every reader past the branch read the
+		// value from before it, which keeps it live across the whole branch and gives it
+		// one more consumer. The backend assigns Lua locals in a single linear scan with
+		// one coalescing preference per producer, so every consumer past the first turns
+		// into a real `loc_a = loc_b` copy, and the wider live ranges push whole
+		// functions over the local limit and into the spill table.
+		//
+		// Measured on `libjpeg_turbo_mjpeg`, lifting every value cost 76% more copies and
+		// 20% more lines than not optimizing at all. Restricted to constants, which cost
+		// nothing to keep live because `constant_isolator` hands each consumer its own
+		// copy, the pass keeps its port reduction and none of that regression.
 		for port in 0..gamma_out.ports_output(graph) {
-			if let Some(argument) = self.find_shared_reference(graph, regions, port, arguments) {
+			if let Some(argument) = self.find_shared_reference(graph, regions, port, arguments)
+				&& Self::is_rematerializable(graph, argument)
+			{
 				let link = Link(*output, port.try_into().unwrap());
 
 				self.map.insert(link, argument);
@@ -96,7 +121,11 @@ impl InvariantPortMover {
 	}
 
 	/// Runs the invariant port motion pass on the graph.
-	pub fn run(&mut self, graph: &mut DataFlowGraph) {
+	///
+	/// Returns `true` when at least one link was rewritten, so the optimizer driver can
+	/// keep iterating until the graph reaches a fixed point.
+	#[must_use = "the optimizer loop needs to know whether the graph changed"]
+	pub fn run(&mut self, graph: &mut DataFlowGraph) -> bool {
 		self.map.clear();
 
 		for node in graph.nodes() {
@@ -161,13 +190,21 @@ impl InvariantPortMover {
 			}
 		}
 
+		let mut changed = false;
+
 		for node in graph.nodes_mut() {
 			node.for_each_mut_argument(|old| {
-				if let Some(new) = self.map.get(old) {
-					*old = *new;
+				if let Some(&new) = self.map.get(old)
+					&& *old != new
+				{
+					*old = new;
+
+					changed = true;
 				}
 			});
 		}
+
+		changed
 	}
 }
 

@@ -291,6 +291,7 @@ use std::io::{Result, Write};
 
 use luanoffi_tree::{
 	LuaNoFFITree,
+	expression::Expression,
 	statement::{
 		Assign, Call, Export, GlobalSet, Match, MemoryCopy, MemoryDrop, MemoryFill, MemoryStore,
 		Repeat, Sequence, Statement, SwapAll, TableCopy, TableDrop, TableFill, TableSet,
@@ -353,6 +354,30 @@ impl Print for Match {
 	}
 }
 
+/// Prints the exit test of a `repeat` loop.
+///
+/// The graph models the test as an integer, so the straightforward printing materializes
+/// a `0` or `1` and then compares it against zero on every iteration. When the integer is
+/// only there to carry a predicate across the boundary we print the predicate itself,
+/// which drops both the conversion and the comparison.
+fn fmt_repeat_condition(
+	condition: &Expression,
+	printer: &mut LuaNoFFIPrinter,
+	out: &mut dyn Write,
+) -> Result<()> {
+	if let Expression::BooleanToInteger(conversion) = condition {
+		write!(out, "not (")?;
+
+		conversion.source.print(printer, out)?;
+
+		write!(out, ")")
+	} else {
+		condition.print(printer, out)?;
+
+		write!(out, " == 0")
+	}
+}
+
 impl Print for Repeat {
 	fn print(&self, printer: &mut LuaNoFFIPrinter, out: &mut dyn Write) -> Result<()> {
 		let Self { code, condition } = self;
@@ -366,8 +391,10 @@ impl Print for Repeat {
 
 		printer.tab(out)?;
 		write!(out, "until ")?;
-		condition.print(printer, out)?;
-		writeln!(out, " == 0")
+
+		fmt_repeat_condition(condition, printer, out)?;
+
+		writeln!(out)
 	}
 }
 
