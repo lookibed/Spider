@@ -33,7 +33,8 @@ pub trait Visitor {
 }
 
 impl Function {
-	fn accept<T: Visitor>(&self, visitor: &mut T) -> ControlFlow<T::Output> {
+	/// Accepts a visitor and traverses the function body and its return values.
+	pub fn accept<T: Visitor>(&self, visitor: &mut T) -> ControlFlow<T::Output> {
 		let Self { code, returns, .. } = self;
 
 		code.accept(visitor)?;

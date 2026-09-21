@@ -2,6 +2,7 @@
 
 extern crate alloc;
 
+mod captures;
 mod expression;
 mod print;
 mod statement;

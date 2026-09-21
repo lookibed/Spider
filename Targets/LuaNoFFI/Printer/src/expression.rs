@@ -12,11 +12,24 @@ use luanoffi_tree::expression::{
 };
 use luanoffi_tree::statement::Statement;
 
-use crate::{LuaNoFFIPrinter, library::NeedsName as _, print::Print};
+use crate::{LuaNoFFIPrinter, captures::Captures, library::NeedsName as _, print::Print};
 
-const PACKED_SCOPED_DEPENDENCIES_THRESHOLD: usize = 48;
+/// `LuaJIT` refuses to compile a function that needs more upvalues than this.
+const LUA_MAX_UPVALUES: usize = 60;
+
+/// Upvalues a printed body may spend on captures the analysis does not count.
+///
+/// Measured over every fixture in `tests/manual`, the only uncounted capture a
+/// body takes is `excess_stack`, which it reads when it spills locals onto the
+/// slow stack; `stack_top` is a local of the body itself whenever the body has
+/// a stack. The remaining two slots are margin.
+const RESERVED_UPVALUES: usize = 3;
+
+/// How many dependencies and runtime helpers a body may bind as upvalues
+/// before the printer starts packing dependencies into a table.
+const CAPTURE_BUDGET: usize = LUA_MAX_UPVALUES - RESERVED_UPVALUES;
+
 const PACKED_SCOPED_DEPENDENCIES_NAME: &str = "__spider_scoped_dependencies";
-const PACKED_SCOPED_DEPENDENCY_ARGUMENT_PREFIX: &str = "__spider_scoped_dependency_";
 
 pub fn fmt_delimited<T, I>(
 	items: I,
@@ -238,6 +251,63 @@ impl Print for Function {
 	}
 }
 
+/// Chooses the dependencies that have to move into a table upvalue.
+///
+/// A printed body captures one upvalue per scoped dependency and one per
+/// runtime helper it names, plus a handful of fixed captures. When that demand
+/// fits in [`CAPTURE_BUDGET`] nothing is packed, so the common case keeps every
+/// dependency in a plain upvalue. Otherwise only the overflow moves into the
+/// table, least used dependency first, so that the hot captures stay upvalues.
+fn packed_scoped_dependencies(
+	dependencies: &[(Name, Expression)],
+	function: &Function,
+) -> Vec<(Name, usize)> {
+	let captures = Captures::of(function);
+	let demand = dependencies.len() + captures.runtime_len();
+
+	if demand <= CAPTURE_BUDGET {
+		return Vec::new();
+	}
+
+	// The table itself costs one upvalue, hence the extra slot.
+	let excess = (demand + 1 - CAPTURE_BUDGET).min(dependencies.len());
+
+	let mut order = (0..dependencies.len()).collect::<Vec<_>>();
+
+	order.sort_by_key(|&index| captures.local_uses(dependencies[index].0));
+	order.truncate(excess);
+	order.sort_unstable();
+
+	order
+		.into_iter()
+		.enumerate()
+		.map(|(slot, index)| (dependencies[index].0, slot))
+		.collect()
+}
+
+/// Prints a function whose `packed` dependencies live in a table upvalue.
+fn print_packed_function(
+	function: &Function,
+	packed: &[(Name, usize)],
+	printer: &mut LuaNoFFIPrinter,
+	out: &mut dyn Write,
+) -> Result<()> {
+	print_function_type_open(function.key.as_deref(), out)?;
+
+	write!(out, "(function(")?;
+	fmt_delimited(&function.arguments, printer, out)?;
+	writeln!(out, ")")?;
+
+	printer.indent();
+	print_function_body(function, Some(packed), printer, out)?;
+	printer.outdent();
+
+	printer.tab(out)?;
+	write!(out, "end)")?;
+
+	print_function_type_close(function.key.as_deref(), out)
+}
+
 impl Print for Scoped {
 	fn print(&self, printer: &mut LuaNoFFIPrinter, out: &mut dyn Write) -> Result<()> {
 		let Self {
@@ -249,91 +319,48 @@ impl Print for Scoped {
 			return function.print(printer, out);
 		}
 
-		writeln!(out, "(function()")?;
+		let packed = packed_scoped_dependencies(dependencies, function);
+
+		// The dependencies arrive as parameters so that the enclosing `module`
+		// body evaluates the sources. Binding them with `local` instead would
+		// make this wrapper capture every source as an upvalue of its own, and
+		// a wrapper is as constrained by the sixty upvalue limit as the body it
+		// returns.
+		write!(out, "(function(")?;
+
+		fmt_delimited(dependencies.iter().map(|(name, _)| *name), printer, out)?;
+
+		writeln!(out, ")")?;
 
 		printer.indent();
 
-		if dependencies.len() < PACKED_SCOPED_DEPENDENCIES_THRESHOLD {
-			for (name, source) in dependencies {
-				printer.tab(out)?;
-				write!(out, "local ")?;
-
-				name.print(printer, out)?;
-				write!(out, " = ")?;
-				source.print(printer, out)?;
-				writeln!(out, ";")?;
-			}
-
+		if !packed.is_empty() {
 			printer.tab(out)?;
-			write!(out, "return ")?;
-			function.print(printer, out)?;
-			writeln!(out)?;
-		} else {
-			write!(out, "(function(")?;
-			for index in 0..dependencies.len() {
-				if index != 0 {
-					write!(out, ", ")?;
-				}
+			write!(out, "local {PACKED_SCOPED_DEPENDENCIES_NAME} = {{ ")?;
 
-				write!(out, "{PACKED_SCOPED_DEPENDENCY_ARGUMENT_PREFIX}{index}")?;
-			}
-			writeln!(out, ")")?;
+			fmt_delimited(packed.iter().map(|(name, _)| *name), printer, out)?;
 
-			printer.indent();
-			printer.tab(out)?;
-			writeln!(out, "local {PACKED_SCOPED_DEPENDENCIES_NAME} = {{")?;
-			printer.indent();
-
-			for index in 0..dependencies.len() {
-				printer.tab(out)?;
-				writeln!(out, "{PACKED_SCOPED_DEPENDENCY_ARGUMENT_PREFIX}{index},")?;
-			}
-
-			printer.outdent();
-			printer.tab(out)?;
-			writeln!(out, "}}")?;
-
-			printer.tab(out)?;
-			write!(out, "return ")?;
-
-			print_function_type_open(function.key.as_deref(), out)?;
-
-			write!(out, "(function(")?;
-			fmt_delimited(&function.arguments, printer, out)?;
-			writeln!(out, ")")?;
-
-			printer.indent();
-			let bindings = dependencies
-				.iter()
-				.enumerate()
-				.map(|(index, (name, _))| (*name, index))
-				.collect::<Vec<_>>();
-			print_function_body(function, Some(&bindings), printer, out)?;
-			printer.outdent();
-
-			printer.tab(out)?;
-			write!(out, "end)")?;
-
-			print_function_type_close(function.key.as_deref(), out)?;
-
-			printer.outdent();
-			writeln!(out)?;
-			printer.tab(out)?;
-			write!(out, "end)(")?;
-
-			for (index, source) in dependencies.iter().map(|(_, source)| source).enumerate() {
-				if index != 0 {
-					write!(out, ", ")?;
-				}
-
-				source.print(printer, out)?;
-			}
-			writeln!(out, ")")?;
+			writeln!(out, " }}")?;
 		}
+
+		printer.tab(out)?;
+		write!(out, "return ")?;
+
+		if packed.is_empty() {
+			function.print(printer, out)?;
+		} else {
+			print_packed_function(function, &packed, printer, out)?;
+		}
+
+		writeln!(out)?;
 
 		printer.outdent();
 		printer.tab(out)?;
-		write!(out, "end)()")
+		write!(out, "end)(")?;
+
+		fmt_delimited(dependencies.iter().map(|(_, source)| source), printer, out)?;
+
+		write!(out, ")")
 	}
 }
 

@@ -1,5 +1,12 @@
 # LuaJIT Hard Limits Blocking Large Spider Modules
 
+> **Update.** The 60 upvalue limit is solved for `lua-no-ffi`; the diagnosis
+> below is incomplete (it counts scoped dependencies but not the runtime helper
+> bindings, which is why the threshold of 48 did not stop `gltf_rs`). See
+> [lua-no-ffi-upvalue-strategies.md](lua-no-ffi-upvalue-strategies.md) for the
+> measurement, the strategies that were tried, and what shipped. The 200 local
+> and jump range limits in this note still stand.
+
 This note documents two LuaJIT runtime limits that currently block Spider-generated modules above a certain size threshold. Both limits are built into the LuaJIT VM and cannot be raised without modifying LuaJIT itself.
 
 ---
