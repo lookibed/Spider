@@ -481,10 +481,11 @@ impl CodeBuilder {
 		self.instructions.push(instruction);
 	}
 
-	pub fn add_table_get(&mut self, destination: u16, source: Location) {
+	pub fn add_table_get(&mut self, destination: u16, source: Location, kind: Option<u32>) {
 		let instruction = Instruction::TableGet(TableGet {
 			destination,
 			source,
+			kind,
 		});
 
 		self.instructions.push(instruction);
@@ -552,38 +553,45 @@ impl CodeBuilder {
 		self.instructions.push(instruction);
 	}
 
-	pub fn apply_memory_offset(&mut self, destination: u16, offset: u64) {
-		if offset == 0 {
-			return;
-		}
-
-		let raw_offset = u32::try_from(offset).unwrap();
-		let signed_offset = i32::from_ne_bytes(raw_offset.to_ne_bytes());
-
-		self.add_i32_constant(SHARED_LOCAL, signed_offset);
-		self.add_integer_binary_operation(
-			destination,
-			destination,
-			SHARED_LOCAL,
-			IntegerType::I32,
-			IntegerBinaryOperator::Add,
-		);
+	// The effective address of a memory access is the unsigned base plus the static
+	// offset of the instruction, computed without wrapping. The static offset is handed
+	// to the runtime untouched, which widens both to doubles before its bounds check, so
+	// no address arithmetic is emitted here at all.
+	//
+	// Memory64 offsets do not fit in 32 bits; saturating keeps them out of bounds for
+	// every memory we support, which is what such an access would trap with anyway.
+	pub fn static_memory_offset(offset: u64) -> u32 {
+		u32::try_from(offset).unwrap_or(u32::MAX)
 	}
 
-	pub fn add_memory_load(&mut self, destination: u16, source: Location, kind: LoadType) {
+	pub fn add_memory_load(
+		&mut self,
+		destination: u16,
+		source: Location,
+		offset: u32,
+		kind: LoadType,
+	) {
 		let instruction = Instruction::MemoryLoad(MemoryLoad {
 			destination,
 			source,
+			offset,
 			kind,
 		});
 
 		self.instructions.push(instruction);
 	}
 
-	pub fn add_memory_store(&mut self, destination: Location, source: u16, kind: StoreType) {
+	pub fn add_memory_store(
+		&mut self,
+		destination: Location,
+		source: u16,
+		offset: u32,
+		kind: StoreType,
+	) {
 		let instruction = Instruction::MemoryStore(MemoryStore {
 			destination,
 			source,
+			offset,
 			kind,
 		});
 

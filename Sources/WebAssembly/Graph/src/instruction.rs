@@ -342,6 +342,9 @@ pub struct TableGet {
 	pub destination: u16,
 	/// The source location.
 	pub source: Location,
+	/// The function type index the element is checked against, if this read backs an
+	/// indirect call.
+	pub kind: Option<u32>,
 }
 
 /// A table element write instruction.
@@ -422,6 +425,8 @@ pub struct MemoryLoad {
 	pub destination: u16,
 	/// The source location.
 	pub source: Location,
+	/// The static byte offset added to the address.
+	pub offset: u32,
 	/// The load type.
 	pub kind: LoadType,
 }
@@ -433,6 +438,8 @@ pub struct MemoryStore {
 	pub destination: Location,
 	/// The source register.
 	pub source: u16,
+	/// The static byte offset added to the address.
+	pub offset: u32,
 	/// The store type.
 	pub kind: StoreType,
 }

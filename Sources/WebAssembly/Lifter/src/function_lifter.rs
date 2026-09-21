@@ -1,4 +1,4 @@
-use alloc::vec::Vec;
+use alloc::{sync::Arc, vec::Vec};
 use ir_graph::{
 	DataFlowGraph, Link,
 	control::{FunctionType, LambdaIn, LambdaOut, ValueType},
@@ -91,6 +91,8 @@ impl FunctionLifter {
 		&mut self,
 		graph: &mut DataFlowGraph,
 		kind: FunctionType,
+		key: Option<Arc<str>>,
+		types: &Types,
 		global_state: &GlobalState,
 	) -> u32 {
 		references::track(&mut self.dependencies, &self.graph.instructions);
@@ -102,7 +104,7 @@ impl FunctionLifter {
 			kind.results.len().try_into().unwrap(),
 		);
 
-		let lambda_in = LambdaIn::add_into(graph, kind.into(), dependencies);
+		let lambda_in = LambdaIn::add_into(graph, kind.into(), dependencies, key);
 
 		self.lifter.set_function_data(
 			graph,
@@ -112,7 +114,9 @@ impl FunctionLifter {
 			&self.dependencies,
 		);
 
-		let results = self.lifter.run(graph, &self.graph, lambda_in, &self.locals);
+		let results = self
+			.lifter
+			.run(graph, &self.graph, types, lambda_in, &self.locals);
 
 		let LambdaIn {
 			kind: lambda_type, ..
@@ -146,8 +150,9 @@ impl FunctionLifter {
 		);
 
 		let function_type = load_type_from_function(function, types);
+		let key = types.get_type_key(function);
 
-		self.build_data_flow(graph, function_type, global_state)
+		self.build_data_flow(graph, function_type, Some(key), types, global_state)
 	}
 
 	pub fn build_expression(
@@ -169,7 +174,7 @@ impl FunctionLifter {
 		self.local_types.clear();
 
 		let function_type = load_type_from_result(result);
-		let function = self.build_data_flow(graph, function_type, global_state);
+		let function = self.build_data_flow(graph, function_type, None, types, global_state);
 		let apply = Apply::add_into(graph, Link(function, 0), Vec::new(), 1);
 
 		Link(apply, 0)

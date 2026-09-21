@@ -92,7 +92,7 @@ impl TuringMachineLifter {
 			reference: self.store,
 			offset: self.offset,
 		};
-		let (result, state) = MemoryLoad::add_into(graph, source, LoadType::I32);
+		let (result, state) = MemoryLoad::add_into(graph, source, 0, LoadType::I32);
 
 		self.loads.push(state);
 
@@ -105,7 +105,7 @@ impl TuringMachineLifter {
 			offset: self.offset,
 		};
 
-		self.store = MemoryStore::add_into(graph, destination, source, StoreType::I32);
+		self.store = MemoryStore::add_into(graph, destination, source, 0, StoreType::I32);
 	}
 
 	fn do_condition(&mut self, graph: &mut DataFlowGraph) -> Link {

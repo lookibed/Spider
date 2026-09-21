@@ -7,6 +7,7 @@ use ir_graph::{
 	DataFlowGraph, Link,
 	control::{GammaIn, GammaOut, LambdaIn, RegionIn, RegionOut, ThetaIn, ThetaOut, ValueType},
 };
+use web_assembly_builder::Types;
 use web_assembly_graph::ControlFlowGraph;
 use web_assembly_liveness::{locals::Locals, references::Reference};
 
@@ -94,6 +95,7 @@ impl ControlFlowLifter {
 		&mut self,
 		data_flow_graph: &mut DataFlowGraph,
 		control_flow_graph: &ControlFlowGraph,
+		types: &Types,
 		id: u16,
 		locals: &Locals,
 	) {
@@ -114,7 +116,7 @@ impl ControlFlowLifter {
 		}
 
 		self.basic_block_lifter
-			.run(data_flow_graph, control_flow_graph.instructions(id));
+			.run(data_flow_graph, types, control_flow_graph.instructions(id));
 
 		// We just started a branch region.
 		if control_flow_graph.is_branch_start(id) {
@@ -164,6 +166,7 @@ impl ControlFlowLifter {
 		&mut self,
 		data_flow_graph: &mut DataFlowGraph,
 		control_flow_graph: &ControlFlowGraph,
+		types: &Types,
 		lambda_in: u32,
 		locals: &Locals,
 	) -> Vec<Link> {
@@ -172,7 +175,7 @@ impl ControlFlowLifter {
 		let results = kind.results.len();
 
 		for id in control_flow_graph.block_ids() {
-			self.handle_basic_block(data_flow_graph, control_flow_graph, id, locals);
+			self.handle_basic_block(data_flow_graph, control_flow_graph, types, id, locals);
 		}
 
 		self.basic_block_lifter

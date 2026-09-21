@@ -415,6 +415,7 @@ impl LocalTracker {
 		let TableGet {
 			destination,
 			source,
+			..
 		} = instruction;
 
 		self.write_local(destination);

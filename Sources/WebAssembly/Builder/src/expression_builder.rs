@@ -126,14 +126,15 @@ impl ExpressionBuilder {
 			.add_call(destinations, sources, SHARED_LOCAL);
 	}
 
-	fn handle_call_indirect(&mut self, table: u32, kind: &FuncType) {
+	fn handle_call_indirect(&mut self, table: u32, type_index: u32, kind: &FuncType) {
 		let function = Location {
 			reference: table.try_into().unwrap(),
 			offset: self.stack_builder.pull_local(),
 		};
 		let (destinations, sources) = self.stack_builder.load_function_type(kind);
 
-		self.code_builder.add_table_get(SHARED_LOCAL, function);
+		self.code_builder
+			.add_table_get(SHARED_LOCAL, function, Some(type_index));
 		self.code_builder
 			.add_call(destinations, sources, SHARED_LOCAL);
 	}
@@ -199,12 +200,11 @@ impl ExpressionBuilder {
 			offset: self.stack_builder.pull_local(),
 		};
 
-		self.code_builder
-			.apply_memory_offset(source.offset, info.offset);
-
+		let offset = CodeBuilder::static_memory_offset(info.offset);
 		let destination = self.stack_builder.push_local();
 
-		self.code_builder.add_memory_load(destination, source, kind);
+		self.code_builder
+			.add_memory_load(destination, source, offset, kind);
 	}
 
 	fn handle_store(&mut self, info: MemArg, kind: StoreType) {
@@ -214,11 +214,10 @@ impl ExpressionBuilder {
 			offset: self.stack_builder.pull_local(),
 		};
 
-		self.code_builder
-			.apply_memory_offset(destination.offset, info.offset);
+		let offset = CodeBuilder::static_memory_offset(info.offset);
 
 		self.code_builder
-			.add_memory_store(destination, source, kind);
+			.add_memory_store(destination, source, offset, kind);
 	}
 
 	fn handle_memory_size(&mut self, memory: u32) {
@@ -636,7 +635,7 @@ impl ExpressionBuilder {
 		};
 		let destination = self.stack_builder.push_local();
 
-		self.code_builder.add_table_get(destination, source);
+		self.code_builder.add_table_get(destination, source, None);
 	}
 
 	fn handle_table_set(&mut self, table: u32) {
@@ -689,7 +688,11 @@ impl ExpressionBuilder {
 			Operator::CallIndirect {
 				type_index,
 				table_index,
-			} => self.handle_call_indirect(table_index, types.get_type(type_index).unwrap_func()),
+			} => self.handle_call_indirect(
+				table_index,
+				type_index,
+				types.get_type(type_index).unwrap_func(),
+			),
 			Operator::Drop => self.handle_drop(),
 			Operator::Select | Operator::TypedSelect { .. } => self.handle_select(),
 			Operator::LocalGet { local_index } => self.handle_local_get(local_index),

@@ -1,15 +1,16 @@
 use alloc::vec::Vec;
 use ir_graph::{DataFlowGraph, Link, Node, control::ValueType, simple};
 use list::resizable::Resizable;
+use web_assembly_builder::Types;
 use web_assembly_graph::instruction::{
 	Call, DataDrop, ElementsDrop, F32Constant, F64Constant, GlobalGet, GlobalSet, I32Constant,
-	I64Constant, Instruction, IntegerBinaryOperation, IntegerCompareOperation,
-	IntegerConvertToNumber, IntegerExtend, IntegerNarrow, IntegerTransmuteToNumber,
-	IntegerUnaryOperation, IntegerWiden, LocalBranch, LocalSet, Location, MemoryCopy, MemoryFill,
-	MemoryGrow, MemoryInit, MemoryLoad, MemorySize, MemoryStore, Name, NumberBinaryOperation,
-	NumberCompareOperation, NumberNarrow, NumberTransmuteToInteger, NumberTruncateToInteger,
-	NumberUnaryOperation, NumberWiden, RefFunction, RefIsNull, RefNull, TableCopy, TableFill,
-	TableGet, TableGrow, TableInit, TableSet, TableSize,
+	I64Constant, Instruction, IntegerBinaryOperation, IntegerBinaryOperator,
+	IntegerCompareOperation, IntegerConvertToNumber, IntegerExtend, IntegerNarrow,
+	IntegerTransmuteToNumber, IntegerUnaryOperation, IntegerWiden, LocalBranch, LocalSet, Location,
+	MemoryCopy, MemoryFill, MemoryGrow, MemoryInit, MemoryLoad, MemorySize, MemoryStore, Name,
+	NumberBinaryOperation, NumberCompareOperation, NumberNarrow, NumberTransmuteToInteger,
+	NumberTruncateToInteger, NumberUnaryOperation, NumberWiden, RefFunction, RefIsNull, RefNull,
+	TableCopy, TableFill, TableGet, TableGrow, TableInit, TableSet, TableSize,
 };
 use web_assembly_liveness::references::{Reference, ReferenceType};
 
@@ -38,6 +39,17 @@ impl BasicBlockLifter {
 
 	pub const fn get_condition(&self) -> Link {
 		self.condition
+	}
+
+	/// Chains `value` onto the trap state so an operation that may trap is still
+	/// evaluated when nothing else consumes its result.
+	///
+	/// Without this the target builders would drop the operation entirely, since
+	/// they only materialize the nodes their statements read from.
+	fn pin_to_trap(&mut self, graph: &mut DataFlowGraph, value: Link) {
+		let fence = simple::Fence::add_into(graph, list::resizable![self.trap, value]);
+
+		self.trap = Link(fence, 0);
 	}
 
 	fn create_fence(&mut self, graph: &mut DataFlowGraph) {
@@ -278,13 +290,22 @@ impl BasicBlockLifter {
 			operator,
 		} = instruction;
 
-		self.locals[usize::from(destination)] = simple::IntegerBinaryOperation::add_into(
+		let result = simple::IntegerBinaryOperation::add_into(
 			graph,
 			self.locals[usize::from(lhs)],
 			self.locals[usize::from(rhs)],
 			kind,
 			operator,
 		);
+
+		self.locals[usize::from(destination)] = result;
+
+		if matches!(
+			operator,
+			IntegerBinaryOperator::Divide { .. } | IntegerBinaryOperator::Remainder { .. }
+		) {
+			self.pin_to_trap(graph, result);
+		}
 	}
 
 	fn handle_integer_compare_operation(
@@ -478,7 +499,7 @@ impl BasicBlockLifter {
 			from,
 		} = instruction;
 
-		self.locals[usize::from(destination)] = simple::NumberTruncateToInteger::add_into(
+		let result = simple::NumberTruncateToInteger::add_into(
 			graph,
 			self.locals[usize::from(source)],
 			signed,
@@ -486,6 +507,12 @@ impl BasicBlockLifter {
 			to,
 			from,
 		);
+
+		self.locals[usize::from(destination)] = result;
+
+		if !saturate {
+			self.pin_to_trap(graph, result);
+		}
 	}
 
 	fn handle_number_transmute_to_integer(
@@ -545,14 +572,21 @@ impl BasicBlockLifter {
 		}
 	}
 
-	fn handle_table_get(&mut self, graph: &mut DataFlowGraph, instruction: TableGet) {
+	fn handle_table_get(
+		&mut self,
+		graph: &mut DataFlowGraph,
+		types: &Types,
+		instruction: TableGet,
+	) {
 		let TableGet {
 			destination,
 			source,
+			kind,
 		} = instruction;
 
+		let key = kind.map(|kind| types.get_type_key(kind));
 		let state = self.load_location(ReferenceType::Table, source);
-		let (result, state) = simple::TableGet::add_into(graph, state);
+		let (result, state) = simple::TableGet::add_into(graph, state, key);
 
 		self.locals[usize::from(destination)] = result;
 
@@ -689,11 +723,12 @@ impl BasicBlockLifter {
 		let MemoryLoad {
 			destination,
 			source,
+			offset,
 			kind,
 		} = instruction;
 
 		let state = self.load_location(ReferenceType::Memory, source);
-		let (result, state) = simple::MemoryLoad::add_into(graph, state, kind);
+		let (result, state) = simple::MemoryLoad::add_into(graph, state, offset, kind);
 
 		self.locals[usize::from(destination)] = result;
 
@@ -705,6 +740,7 @@ impl BasicBlockLifter {
 		let MemoryStore {
 			destination,
 			source,
+			offset,
 			kind,
 		} = instruction;
 
@@ -712,6 +748,7 @@ impl BasicBlockLifter {
 			graph,
 			self.load_location(ReferenceType::Memory, destination),
 			self.locals[usize::from(source)],
+			offset,
 			kind,
 		);
 
@@ -826,7 +863,12 @@ impl BasicBlockLifter {
 		self.dependencies.set(ReferenceType::Data, source, state);
 	}
 
-	fn handle_instruction(&mut self, graph: &mut DataFlowGraph, instruction: Instruction) {
+	fn handle_instruction(
+		&mut self,
+		graph: &mut DataFlowGraph,
+		types: &Types,
+		instruction: Instruction,
+	) {
 		match instruction {
 			Instruction::LocalSet(instruction) => self.handle_local_set(instruction),
 			Instruction::LocalBranch(instruction) => self.handle_local_branch(instruction),
@@ -880,7 +922,7 @@ impl BasicBlockLifter {
 			}
 			Instruction::GlobalGet(instruction) => self.handle_global_get(graph, instruction),
 			Instruction::GlobalSet(instruction) => self.handle_global_set(graph, instruction),
-			Instruction::TableGet(instruction) => self.handle_table_get(graph, instruction),
+			Instruction::TableGet(instruction) => self.handle_table_get(graph, types, instruction),
 			Instruction::TableSet(instruction) => self.handle_table_set(graph, instruction),
 			Instruction::TableSize(instruction) => self.handle_table_size(graph, instruction),
 			Instruction::TableGrow(instruction) => self.handle_table_grow(graph, instruction),
@@ -899,9 +941,9 @@ impl BasicBlockLifter {
 		}
 	}
 
-	pub fn run(&mut self, graph: &mut DataFlowGraph, instructions: &[Instruction]) {
+	pub fn run(&mut self, graph: &mut DataFlowGraph, types: &Types, instructions: &[Instruction]) {
 		for &instruction in instructions {
-			self.handle_instruction(graph, instruction);
+			self.handle_instruction(graph, types, instruction);
 		}
 	}
 }
