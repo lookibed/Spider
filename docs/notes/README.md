@@ -14,6 +14,10 @@ This directory holds the working notes that explain where Spider is actually win
 - [lua-no-ffi-known-bugs.md](lua-no-ffi-known-bugs.md)
 - [problem_lua_limits.md](problem_lua_limits.md)
 
+## Upstream
+
+- [upstream-review.md](upstream-review.md)
+
 ## Important open problems
 
 - [lua-no-ffi-plmpeg-open-problem.md](lua-no-ffi-plmpeg-open-problem.md)
