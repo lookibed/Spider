@@ -257,7 +257,8 @@ impl Print for Scoped {
 			function.print(printer, out)?;
 			writeln!(out)?;
 		} else {
-			write!(out, "(function(")?;
+			printer.tab(out)?;
+			write!(out, "return (function(")?;
 			for index in 0..dependencies.len() {
 				if index != 0 {
 					write!(out, ", ")?;

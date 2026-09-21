@@ -29,71 +29,107 @@ The wrapper crate embeds 3 fixed graph constructors:
 
 ## Build
 
-If the wasm target is missing, install it first:
+The crate is a workspace member and `rust-toolchain.toml` already pins the
+`wasm32-unknown-unknown` target, so no extra `rustup target add` is needed.
 
-```powershell
-rustup target add wasm32-unknown-unknown
-```
+Build the wrapper crate and copy the artifact into `generated`:
 
-Build the wrapper crate:
+```bash
+cargo build --manifest-path tests/manual/self-hosting-luanoffi-builder/Cargo.toml \
+	--target wasm32-unknown-unknown --release
 
-```powershell
-cargo build --manifest-path .\tests\manual\self-hosting-luanoffi-builder\Cargo.toml --target wasm32-unknown-unknown --release
-```
-
-Copy the produced wasm into `generated`:
-
-```powershell
-Copy-Item .\tests\manual\self-hosting-luanoffi-builder\target\wasm32-unknown-unknown\release\self_hosting_luanoffi_builder.wasm .\tests\manual\self-hosting-luanoffi-builder\generated\self_hosting_luanoffi_builder.wasm
+cp target/wasm32-unknown-unknown/release/self_hosting_luanoffi_builder.wasm \
+	tests/manual/self-hosting-luanoffi-builder/generated/self_hosting_luanoffi_builder.wasm
 ```
 
 Generate `lua-no-ffi` from the wasm:
 
-```powershell
-.\target\release\spider-cli.exe .\tests\manual\self-hosting-luanoffi-builder\generated\self_hosting_luanoffi_builder.wasm -t lua-no-ffi > .\tests\manual\self-hosting-luanoffi-builder\generated\self_hosting_luanoffi_builder.lua
+```bash
+cargo build --release -p spider-cli
+
+./target/release/spider-cli \
+	tests/manual/self-hosting-luanoffi-builder/generated/self_hosting_luanoffi_builder.wasm \
+	-t lua-no-ffi \
+	> tests/manual/self-hosting-luanoffi-builder/generated/self_hosting_luanoffi_builder.lua
 ```
 
 ## Run
 
-Run the generated `lua-no-ffi` module under `luajit`:
+Run the generated `lua-no-ffi` module under `luajit`, from the repository root:
 
-```powershell
-luajit .\tests\manual\self-hosting-luanoffi-builder\main.lua lua-no-ffi
+```bash
+luajit tests/manual/self-hosting-luanoffi-builder/main.lua lua-no-ffi
 ```
 
-Expected output shape:
+## Verified output
+
+Verified on Linux with `rustc 1.98.1`, `luajit 2.1.0-beta3` and
+`wasmtime-cli 24.0.1`. The `lua-no-ffi` run prints exactly:
 
 ```text
 Result (CaseCount): 3
-Case 0 (Locals): ...
-Case 0 (Stack): ...
-Case 0 (Exports): ...
-Case 0 (CodeHash): ...
-Case 0 (TreeHash): ...
-...
+Case 0 (Locals): 1
+Case 0 (Stack): 0
+Case 0 (Exports): 1
+Case 0 (CodeHash): 1183502082
+Case 0 (TreeHash): 1193852273
+Case 1 (Locals): 3
+Case 1 (Stack): 0
+Case 1 (Exports): 1
+Case 1 (CodeHash): -1661873899
+Case 1 (TreeHash): -472748772
+Case 2 (Locals): 2
+Case 2 (Stack): 0
+Case 2 (Exports): 1
+Case 2 (CodeHash): -1794148870
+Case 2 (TreeHash): 693920941
 ```
+
+Every value above is bit-identical to the `wasmtime` baseline below.
 
 ## Wasmtime baseline
 
-Run the wasm directly with `wasmtime`:
+`--invoke` must be passed *before* the module path; `wasmtime 24` otherwise
+treats it as a module argument and silently prints nothing. The local cache
+directory is also broken in this environment, hence `-C cache=n`.
 
-```powershell
-wasmtime -C cache=n .\tests\manual\self-hosting-luanoffi-builder\generated\self_hosting_luanoffi_builder.wasm --invoke builder_case_count
-wasmtime -C cache=n .\tests\manual\self-hosting-luanoffi-builder\generated\self_hosting_luanoffi_builder.wasm --invoke builder_probe_locals 0
-wasmtime -C cache=n .\tests\manual\self-hosting-luanoffi-builder\generated\self_hosting_luanoffi_builder.wasm --invoke builder_probe_stack 0
-wasmtime -C cache=n .\tests\manual\self-hosting-luanoffi-builder\generated\self_hosting_luanoffi_builder.wasm --invoke builder_probe_exports 0
-wasmtime -C cache=n .\tests\manual\self-hosting-luanoffi-builder\generated\self_hosting_luanoffi_builder.wasm --invoke builder_probe_code_hash 0
-wasmtime -C cache=n .\tests\manual\self-hosting-luanoffi-builder\generated\self_hosting_luanoffi_builder.wasm --invoke builder_run_case_hash 0
+```bash
+WASM=tests/manual/self-hosting-luanoffi-builder/generated/self_hosting_luanoffi_builder.wasm
+
+wasmtime run -C cache=n --invoke builder_case_count "$WASM"
+
+for case in 0 1 2; do
+	for probe in builder_probe_locals builder_probe_stack builder_probe_exports \
+		builder_probe_code_hash builder_run_case_hash; do
+		echo "case $case $probe = $(wasmtime run -C cache=n --invoke "$probe" "$WASM" "$case")"
+	done
+done
 ```
 
-Repeat the probe calls for cases `1` and `2` and require exact equality with the values printed by `main.lua`.
+Reference values:
+
+| probe                     | case 0     | case 1      | case 2      |
+| ------------------------- | ---------- | ----------- | ----------- |
+| `builder_probe_locals`    | 1          | 3           | 2           |
+| `builder_probe_stack`     | 0          | 0           | 0           |
+| `builder_probe_exports`   | 1          | 1           | 1           |
+| `builder_probe_code_hash` | 1183502082 | -1661873899 | -1794148870 |
+| `builder_run_case_hash`   | 1193852273 | -472748772  | 693920941   |
+
+`builder_case_count` returns `3`.
+
+The module imports nothing and needs no WASI, so any plain WebAssembly host
+works as a second opinion, for example `node`:
+
+```bash
+node -e 'const fs=require("fs");const e=new WebAssembly.Instance(new WebAssembly.Module(fs.readFileSync(process.argv[1])),{}).exports;console.log(e.builder_probe_code_hash(0))' \
+	tests/manual/self-hosting-luanoffi-builder/generated/self_hosting_luanoffi_builder.wasm
+```
 
 ## Notes
 
 - The fixture keeps hashing local and structural. It does not depend on `luanoffi-printer`.
-- The wrapper crate now uses a hybrid profile: host builds stay ergonomic, while `wasm32` builds use `no_std + alloc` with a fixture-local bump allocator to keep the emitted wasm narrower.
-- In this environment, `wasmtime` needed `-C cache=n` because its default cache directory was broken locally.
-- Current blocker after a verified wasm build:
-  - both generated targets, `lua-no-ffi` and `lua-jit`, still fail to load under LuaJIT with `function ... has more than 60 upvalues`
-  - after moving the wrapper to `no_std` on wasm, the artifact sizes improved only modestly: `.wasm` is `165,494` bytes, generated `lua-no-ffi` is `2,163,187` bytes, generated `lua-jit` is `2,104,007` bytes
-  - this means the next meaningful step is target-side reduction of captured upvalues or a still narrower wasm code shape
+- The wrapper crate uses a hybrid profile: host builds stay ergonomic, while `wasm32` builds use `no_std + alloc` with a fixture-local bump allocator to keep the emitted wasm narrower.
+- Approximate artifact sizes: `.wasm` is `171,389` bytes, generated `lua-no-ffi` is about `2.09` MB and generated `lua-jit` about `2.00` MB. The Lua sizes move with printer changes.
+- `lua-no-ffi` loads and runs cleanly under LuaJIT; the module hoists spilled module-level cells into `excess_stack`, so it stays under both the 200-local and the 60-upvalue limits.
+- `lua-jit` still fails to load with `function ... has more than 60 upvalues`. In that target the module-level cells are plain locals, so the `(function() ... end)()` wrapper around a packed scoped function captures every dependency as an upvalue. `main.lua` therefore rejects `lua-jit` for now.
