@@ -72,14 +72,14 @@ end
 -- NEEDS force_s32
 -- NEEDS math_modf
 local function rt_divide_s32(lhs, rhs)
-	if lhs == 0x80000000 and rhs == 0xFFFFFFFF then
-		error("integer overflow")
-	elseif rhs == 0 then
-		error("integer divide by zero")
-	end
-
 	lhs = force_s32(lhs)
 	rhs = force_s32(rhs)
+
+	if rhs == 0 then
+		error("integer divide by zero")
+	elseif lhs == -0x80000000 and rhs == -1 then
+		error("integer overflow")
+	end
 
 	local result = lhs / rhs
 
@@ -90,13 +90,22 @@ local function rt_divide_s32(lhs, rhs)
 end
 
 -- SECTION divide_u32
+-- NEEDS bit32_or
 -- NEEDS force_u32
+-- NEEDS math_floor
 local function rt_divide_u32(lhs, rhs)
+	lhs = force_u32(lhs)
+	rhs = force_u32(rhs)
+
 	if rhs == 0 then
 		error("integer divide by zero")
 	end
 
-	return math.floor(force_u32(lhs) / force_u32(rhs))
+	local result = math_floor(lhs / rhs)
+
+	result = bit32_or(result, 0)
+
+	return result
 end
 
 -- SECTION remainder_s32
@@ -104,12 +113,12 @@ end
 -- NEEDS force_s32
 -- NEEDS math_fmod
 local function rt_remainder_s32(lhs, rhs)
-	if rhs == 0 then
-		error("integer divide by zero", 2)
-	end
-
 	lhs = force_s32(lhs)
 	rhs = force_s32(rhs)
+
+	if rhs == 0 then
+		error("integer divide by zero")
+	end
 
 	local result = math_fmod(lhs, rhs)
 
@@ -122,11 +131,14 @@ end
 -- NEEDS bit32_or
 -- NEEDS force_u32
 local function rt_remainder_u32(lhs, rhs)
+	lhs = force_u32(lhs)
+	rhs = force_u32(rhs)
+
 	if rhs == 0 then
-		error("integer divide by zero", 2)
+		error("integer divide by zero")
 	end
 
-	local result = force_u32(lhs) % force_u32(rhs)
+	local result = lhs % rhs
 
 	result = bit32_or(result, 0)
 
@@ -201,13 +213,15 @@ local function rt_rotate_right_i32(lhs, rhs)
 end
 
 -- SECTION equal_i32
+-- NEEDS force_i32
 local function rt_equal_i32(lhs, rhs)
-	return lhs == rhs
+	return force_i32(lhs) == force_i32(rhs)
 end
 
 -- SECTION not_equal_i32
+-- NEEDS force_i32
 local function rt_not_equal_i32(lhs, rhs)
-	return lhs ~= rhs
+	return force_i32(lhs) ~= force_i32(rhs)
 end
 
 -- SECTION less_than_s32
@@ -317,9 +331,10 @@ local function rt_extend_s16_to_i32(source)
 end
 
 -- SECTION convert_s32_to_f32
+-- NEEDS force_s32
 -- NEEDS into_bits_f32
 local function rt_convert_s32_to_f32(source)
-	return into_bits_f32(source + 0.0)
+	return into_bits_f32(force_s32(source) + 0.0)
 end
 
 -- SECTION convert_u32_to_f32
@@ -330,14 +345,15 @@ local function rt_convert_u32_to_f32(source)
 end
 
 -- SECTION convert_s32_to_f64
+-- NEEDS force_s32
 local function rt_convert_s32_to_f64(source)
-	return source + 0.0
+	return force_s32(source) + 0.0
 end
 
 -- SECTION convert_u32_to_f64
 -- NEEDS force_u32
 local function rt_convert_u32_to_f64(source)
-	return force_u32(source)
+	return force_u32(source) + 0.0
 end
 
 -- SECTION transmute_i32_to_f32

@@ -4,6 +4,6 @@ mod sections;
 
 pub use self::{
 	names_finder::{NamesFinder, NeedsName},
-	printer::Printer,
+	printer::{Printer, RUNTIME_TABLE},
 	sections::Sections,
 };

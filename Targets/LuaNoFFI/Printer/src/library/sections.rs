@@ -2,6 +2,10 @@
 pub struct Section {
 	/// The section dependency references.
 	pub references: Box<[&'static str]>,
+	/// The names the section body declares as top level locals.
+	pub defines: Box<[&'static str]>,
+	/// Every identifier mentioned anywhere in the section body, sorted.
+	pub mentions: Box<[&'static str]>,
 	/// The section name.
 	pub name: &'static str,
 	/// The section source contents.
@@ -11,6 +15,92 @@ pub struct Section {
 impl Section {
 	const SECTION_HEADER: &str = "-- SECTION ";
 	const NEEDS_HEADER: &str = "-- NEEDS ";
+	const LOCAL_HEADER: &str = "local ";
+	const FUNCTION_HEADER: &str = "local function ";
+
+	const fn is_name_start(source: char) -> bool {
+		source == '_' || source.is_ascii_alphabetic()
+	}
+
+	const fn is_name_part(source: char) -> bool {
+		source == '_' || source.is_ascii_alphanumeric()
+	}
+
+	fn is_name(source: &str) -> bool {
+		let mut characters = source.chars();
+
+		characters.next().is_some_and(Self::is_name_start) && characters.all(Self::is_name_part)
+	}
+
+	fn parse_definition(line: &'static str, definitions: &mut Vec<&'static str>) {
+		if let Some(rest) = line.strip_prefix(Self::FUNCTION_HEADER) {
+			let end = rest
+				.find(|source: char| !Self::is_name_part(source))
+				.unwrap_or(rest.len());
+			let name = &rest[..end];
+
+			if Self::is_name(name) {
+				definitions.push(name);
+			}
+
+			return;
+		}
+
+		let Some(rest) = line.strip_prefix(Self::LOCAL_HEADER) else {
+			return;
+		};
+
+		let names = match rest.split_once('=') {
+			Some((names, _)) => names,
+			None => rest,
+		};
+
+		for name in names.split(',').map(str::trim) {
+			if Self::is_name(name) {
+				definitions.push(name);
+			}
+		}
+	}
+
+	/// Finds every top level local declared by the section body.
+	///
+	/// Only lines that start at the first column are inspected, since any
+	/// deeper declaration is scoped to a nested block instead.
+	fn parse_definitions(contents: &'static str) -> Box<[&'static str]> {
+		let mut definitions = Vec::new();
+
+		for line in contents.lines() {
+			Self::parse_definition(line, &mut definitions);
+		}
+
+		definitions.into()
+	}
+
+	/// Finds every identifier mentioned by the section body.
+	///
+	/// Comments and strings are deliberately scanned too; the result is only
+	/// ever used to widen the set of imported names, so a superset is safe
+	/// whereas a missing name would silently turn into a global lookup.
+	fn parse_mentions(contents: &'static str) -> Box<[&'static str]> {
+		let mut mentions = Vec::new();
+		let mut rest = contents;
+
+		while let Some(start) = rest.find(|source: char| Self::is_name_start(source)) {
+			let tail = &rest[start..];
+			let end = tail
+				.find(|source: char| !Self::is_name_part(source))
+				.unwrap_or(tail.len());
+
+			mentions.push(&tail[..end]);
+
+			rest = &tail[end..];
+		}
+
+		mentions.sort_unstable();
+		mentions.dedup();
+
+		mentions.into()
+	}
 
 	fn try_parse_header(
 		source: &'static str,
@@ -57,9 +147,14 @@ impl Section {
 			"references for `{name}` should be sorted"
 		);
 
+		let defines = Self::parse_definitions(contents);
+		let mentions = Self::parse_mentions(contents);
+
 		Some((
 			Self {
 				references,
+				defines,
+				mentions,
 				name,
 				contents,
 			},
@@ -71,14 +166,15 @@ impl Section {
 /// A collection of runtime library sections.
 pub struct Sections {
 	list: Vec<Section>,
+	owners: Vec<(&'static str, &'static str)>,
 }
 
 impl Sections {
 	/// The bit library source.
 	pub const BIT_SOURCE: &str = include_str!("../../runtime/builtin/bit.lua");
-	/// The bit32 library source (Lua 5.2+ style, implemented via bit for LuaJIT).
+	/// The bit32 library source (Lua 5.2+ style, implemented via `bit` for `LuaJIT`).
 	pub const BIT32_SOURCE: &str = include_str!("../../runtime/builtin/bit32.lua");
-	/// The buffer library source (replaces FFI in LuaNoFFI).
+	/// The buffer library source (replaces FFI in `LuaNoFFI`).
 	pub const BUFFER_SOURCE: &str = include_str!("../../runtime/builtin/buffer.lua");
 	/// The math library source.
 	pub const MATH_SOURCE: &str = include_str!("../../runtime/builtin/math.lua");
@@ -102,7 +198,10 @@ impl Sections {
 	/// Creates a new section collection with all built-in sources.
 	#[must_use]
 	pub fn with_built_ins() -> Self {
-		let mut sections = Self { list: Vec::new() };
+		let mut sections = Self {
+			list: Vec::new(),
+			owners: Vec::new(),
+		};
 
 		sections.parse_from(Self::BIT_SOURCE);
 		sections.parse_from(Self::BIT32_SOURCE);
@@ -142,7 +241,8 @@ impl Sections {
 	///
 	/// # Panics
 	///
-	/// Panics if duplicate section names are found.
+	/// Panics if duplicate section names are found, or if two sections declare
+	/// the same top level local.
 	pub fn resolve(&mut self) {
 		self.list.sort_unstable_by_key(|&Section { name, .. }| name);
 
@@ -152,6 +252,40 @@ impl Sections {
 
 			assert_ne!(lhs, rhs, "`{lhs}` section was duplicated");
 		}
+
+		self.owners.clear();
+
+		for &Section {
+			name, ref defines, ..
+		} in &self.list
+		{
+			self.owners
+				.extend(defines.iter().map(|&define| (define, name)));
+		}
+
+		self.owners.sort_unstable();
+
+		for window in self.owners.windows(2) {
+			let (lhs, lhs_owner) = window[0];
+			let (rhs, rhs_owner) = window[1];
+
+			assert_ne!(
+				lhs, rhs,
+				"`{lhs}` is declared by both `{lhs_owner}` and `{rhs_owner}`"
+			);
+		}
+	}
+
+	/// Finds the section declaring the given top level local, if any.
+	#[must_use]
+	pub fn owner(&self, name: &str) -> Option<&'static str> {
+		let position = self
+			.owners
+			.binary_search_by_key(&name, |&(define, _)| define)
+			.ok()?;
+		let (_, owner) = self.owners[position];
+
+		Some(owner)
 	}
 
 	/// Finds a section by name.
@@ -192,5 +326,36 @@ mod tests {
 		] {
 			let _ = sections.find(name);
 		}
+	}
+
+	#[test]
+	fn sections_declare_their_own_locals() {
+		let sections = Sections::with_built_ins();
+
+		for (name, defines) in [
+			(
+				"bit32",
+				&["bit32", "bit32_countlz_impl", "bit32_countrz_impl"][..],
+			),
+			("memory_new", &["rt_memory_new"][..]),
+			("load_i32", &["rt_load_i32"][..]),
+			("from_bits_f32", &["from_bits_f32"][..]),
+			("bit", &["bit"][..]),
+		] {
+			assert_eq!(&*sections.find(name).defines, defines, "for `{name}`");
+
+			for &define in defines {
+				assert_eq!(sections.owner(define), Some(name));
+			}
+		}
+	}
+
+	#[test]
+	fn sections_mention_their_dependencies() {
+		let sections = Sections::with_built_ins();
+		let section = sections.find("bit32_countlz");
+
+		assert!(section.mentions.contains(&"bit32_countlz_impl"));
+		assert!(section.mentions.is_sorted());
 	}
 }

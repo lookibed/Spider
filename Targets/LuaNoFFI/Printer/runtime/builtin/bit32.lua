@@ -1,5 +1,5 @@
 -- SECTION bit32
-local bit = require("bit")
+-- NEEDS bit
 local bit32 = {}
 
 local function bit32_countlz_impl(x)
@@ -40,27 +40,35 @@ bit32.countlz = bit32_countlz_impl
 bit32.countrz = bit32_countrz_impl
 
 -- SECTION bit32_and
+-- NEEDS bit
 local bit32_and = bit.band
 
 -- SECTION bit32_or
+-- NEEDS bit
 local bit32_or = bit.bor
 
 -- SECTION bit32_xor
+-- NEEDS bit
 local bit32_xor = bit.bxor
 
 -- SECTION bit32_lshift
+-- NEEDS bit
 local bit32_lshift = bit.lshift
 
 -- SECTION bit32_rshift
+-- NEEDS bit
 local bit32_rshift = bit.rshift
 
 -- SECTION bit32_arshift
+-- NEEDS bit
 local bit32_arshift = bit.arshift
 
 -- SECTION bit32_lrotate
+-- NEEDS bit
 local bit32_lrotate = bit.rol
 
 -- SECTION bit32_rrotate
+-- NEEDS bit
 local bit32_rrotate = bit.ror
 
 -- SECTION bit32_countlz

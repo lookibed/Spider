@@ -5,9 +5,38 @@ mod conditional {
 
 	use crate::{LuaNoFFIPrinter, print::Print as _};
 
+	/// The largest number of arms printed inside a single dispatch statement.
+	///
+	/// `LuaJIT` encodes every jump offset in sixteen bits, so one control
+	/// structure may only reach across about thirty two thousand instructions.
+	/// A match with more arms than this is therefore split into several
+	/// statements that each dispatch their own range, which keeps every jump
+	/// short no matter how large the table grows.
+	const MAX_GROUPED_BRANCHES: usize = 512;
+
+	/// The local a grouped match keeps its already evaluated condition in.
+	const SELECTOR_NAME: &str = "__spider_match_selector";
+
+	/// The value a nested conditional compares its arms against.
+	enum Selector<'source> {
+		/// An expression printed again for every comparison.
+		Expression(&'source Expression),
+		/// A local that already holds the evaluated condition.
+		Name(&'source str),
+	}
+
+	impl Selector<'_> {
+		fn print(&self, printer: &mut LuaNoFFIPrinter, out: &mut dyn Write) -> Result<()> {
+			match *self {
+				Self::Expression(expression) => expression.print(printer, out),
+				Self::Name(name) => write!(out, "{name}"),
+			}
+		}
+	}
+
 	fn print_recursive(
 		branches: &[Sequence],
-		condition: &Expression,
+		condition: &Selector<'_>,
 		start: usize,
 		end: usize,
 		printer: &mut LuaNoFFIPrinter,
@@ -64,6 +93,71 @@ mod conditional {
 		}
 	}
 
+	/// Prints a match whose arms do not fit into a single control structure.
+	///
+	/// The condition is evaluated once into a local, the default arm is
+	/// dispatched on its own, and the remaining arms are grouped into ranges
+	/// that are each tested by a separate statement. Every group falls through
+	/// to the next one, so at most one of them ever runs.
+	fn print_grouped_match(
+		branches: &[Sequence],
+		condition: &Expression,
+		printer: &mut LuaNoFFIPrinter,
+		out: &mut dyn Write,
+	) -> Result<()> {
+		let len = branches.len() - 1;
+		let selector = Selector::Name(SELECTOR_NAME);
+
+		printer.tab(out)?;
+		writeln!(out, "do")?;
+		printer.indent();
+
+		printer.tab(out)?;
+		write!(out, "local {SELECTOR_NAME} = ")?;
+
+		condition.print(printer, out)?;
+
+		writeln!(out)?;
+
+		printer.tab(out)?;
+		writeln!(
+			out,
+			"if {SELECTOR_NAME} < 0 or {SELECTOR_NAME} >= {len} then"
+		)?;
+
+		printer.indent();
+		branches.last().unwrap().print(printer, out)?;
+		printer.outdent();
+
+		printer.tab(out)?;
+		writeln!(out, "end")?;
+
+		let mut start = 0;
+
+		while start < len {
+			let end = len.min(start + MAX_GROUPED_BRANCHES);
+
+			printer.tab(out)?;
+			writeln!(
+				out,
+				"if {SELECTOR_NAME} >= {start} and {SELECTOR_NAME} < {end} then"
+			)?;
+
+			printer.indent();
+			print_recursive(branches, &selector, start, end, printer, out)?;
+			printer.outdent();
+
+			printer.tab(out)?;
+			writeln!(out, "end")?;
+
+			start = end;
+		}
+
+		printer.outdent();
+		printer.tab(out)?;
+		writeln!(out, "end")
+	}
+
 	pub fn print_match(
 		branches: &[Sequence],
 		condition: &Expression,
@@ -71,6 +165,12 @@ mod conditional {
 		out: &mut dyn Write,
 	) -> Result<()> {
 		let len = branches.len() - 1;
+
+		if len > MAX_GROUPED_BRANCHES {
+			return print_grouped_match(branches, condition, printer, out);
+		}
+
+		let selector = Selector::Expression(condition);
 
 		printer.tab(out)?;
 		write!(out, "if (")?;
@@ -84,7 +184,7 @@ mod conditional {
 		writeln!(out, ") < {len} then")?;
 
 		printer.indent();
-		print_recursive(branches, condition, 0, len, printer, out)?;
+		print_recursive(branches, &selector, 0, len, printer, out)?;
 		printer.outdent();
 
 		printer.tab(out)?;
@@ -200,20 +300,42 @@ use luanoffi_tree::{
 use crate::{
 	LuaNoFFIPrinter,
 	expression::{fmt_delimited, fmt_locals, fmt_stack_enter, fmt_stack_leave},
-	library::NeedsName as _,
+	library::{NeedsName as _, RUNTIME_TABLE},
 	print::Print,
 };
 
+/// The name a runtime section binds its helper to.
+///
+/// The library prints every section inside its own scope and publishes the
+/// locals it declares in the `RUNTIME_TABLE` table, so the module reads its
+/// helpers back from there.
 fn runtime_binding_name(section: &str) -> String {
-	if section.starts_with("into_bits_") || section.starts_with("from_bits_") {
+	if section.starts_with("into_bits_")
+		|| section.starts_with("from_bits_")
+		|| section.starts_with("bit32_")
+		|| section.starts_with("buffer_")
+	{
 		section.to_owned()
 	} else {
 		alloc::format!("rt_{section}")
 	}
 }
 
-fn use_table_backed_module_locals(printer: &LuaNoFFIPrinter, locals: &[luanoffi_tree::expression::Name]) -> bool {
-	locals.len() + printer.runtime_names().len() + 2 >= 200
+/// Whether the module body would exceed the Lua limit of 200 active locals.
+///
+/// The module function declares `environment`, `excess_stack`, one binding per
+/// runtime section, `stack_top` when the function has a slow stack, every
+/// module local, and `export`.
+fn use_table_backed_module_locals(
+	printer: &LuaNoFFIPrinter,
+	locals: &[luanoffi_tree::expression::Name],
+	stack: u16,
+) -> bool {
+	const LUA_MAX_LOCALS: usize = 200;
+
+	let fixed = 3 + usize::from(stack != 0);
+
+	locals.len() + printer.runtime_names().len() + fixed > LUA_MAX_LOCALS
 }
 
 impl Print for Match {
@@ -435,6 +557,7 @@ impl Print for MemoryStore {
 		let Self {
 			destination,
 			source,
+			offset,
 			..
 		} = self;
 
@@ -445,7 +568,7 @@ impl Print for MemoryStore {
 
 		destination.print(printer, out)?;
 
-		write!(out, ", ")?;
+		write!(out, ", {offset}, ")?;
 
 		source.print(printer, out)?;
 
@@ -594,23 +717,6 @@ impl Print for LuaNoFFITree {
 			exports,
 		} = self;
 
-		if !printer.runtime_names().is_empty() {
-			printer.tab(out)?;
-			writeln!(out, "local runtime = {{")?;
-			printer.indent();
-
-			for &name in printer.runtime_names() {
-				let binding = runtime_binding_name(name);
-
-				printer.tab(out)?;
-				writeln!(out, "{binding} = {binding},")?;
-			}
-
-			printer.outdent();
-			printer.tab(out)?;
-			writeln!(out, "}}\n")?;
-		}
-
 		printer.tab(out)?;
 		write!(out, "local function module(")?;
 
@@ -623,13 +729,13 @@ impl Print for LuaNoFFITree {
 		printer.tab(out)?;
 		writeln!(out, "local excess_stack = {{ top = 0 }}")?;
 
-		let table_backed_locals = use_table_backed_module_locals(printer, locals);
+		let table_backed_locals = use_table_backed_module_locals(printer, locals, *stack);
 
 		for &name in printer.runtime_names() {
 			let binding = runtime_binding_name(name);
 
 			printer.tab(out)?;
-			writeln!(out, "local {binding} = runtime.{binding}")?;
+			writeln!(out, "local {binding} = {RUNTIME_TABLE}.{binding}")?;
 		}
 
 		fmt_stack_enter(*stack, printer, out)?;
@@ -668,11 +774,6 @@ impl Print for LuaNoFFITree {
 		printer.outdent();
 
 		printer.tab(out)?;
-		writeln!(out, "end")?;
-
-		printer.tab(out)?;
-		writeln!(out, "return module")?;
-
-		Ok(())
+		writeln!(out, "end")
 	}
 }

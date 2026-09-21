@@ -1,10 +1,20 @@
 -- SECTION buffer
+-- A buffer is a table with three raw fields:
+--   `__n`: the logical byte length,
+--   `__s`: an immutable base image (a Lua string, possibly shorter than `__n`;
+--          bytes past its end read as zero),
+--   `__d`: an optional overlay table of written bytes keyed by 1-based index.
 local buffer = {}
+
+-- SECTION buffer_trap
+local function buffer_trap()
+	error("out of bounds memory access", 2)
+end
 
 -- SECTION buffer_meta
 local buffer_meta = {
 	__index = function(t, k)
-		if type(k) ~= "number" or k < 1 then
+		if type(k) ~= "number" or k < 1 or k > rawget(t, "__n") then
 			return nil
 		end
 
@@ -18,12 +28,10 @@ local buffer_meta = {
 			end
 		end
 
-		local s = rawget(t, "__s")
-
-		return string.byte(s, k)
+		return string.byte(rawget(t, "__s"), k) or 0
 	end,
 	__newindex = function(t, k, v)
-		if type(k) ~= "number" or k < 1 then
+		if type(k) ~= "number" or k < 1 or k > rawget(t, "__n") then
 			return
 		end
 
@@ -37,7 +45,7 @@ local buffer_meta = {
 		rawset(dirty, k, v)
 	end,
 	__len = function(t)
-		return #rawget(t, "__s")
+		return rawget(t, "__n")
 	end
 }
 
@@ -52,27 +60,40 @@ local TRANSMUTE_N64 = {}
 
 -- SECTION ensure_dirty
 local function ensure_dirty(buf)
-	if not rawget(buf, "__d") then
-		rawset(buf, "__d", {})
+	local dirty = rawget(buf, "__d")
+
+	if not dirty then
+		dirty = {}
+		rawset(buf, "__d", dirty)
 	end
+
+	return dirty
 end
 
 -- SECTION buffer_byte
--- NEEDS buffer_create
-local function buffer_byte(buf, offset)
+-- NEEDS buffer_trap
+-- Reads the byte at `base + offset`, where `base` is the address a WebAssembly
+-- access computed and `offset` the static offset of the instruction. A negative
+-- `base` is out of bounds for every memory we support, and `base + offset` is
+-- computed in doubles so it never wraps.
+local function buffer_byte(buf, base, offset)
+	local index = base + offset
+
+	if base < 0 or index >= rawget(buf, "__n") then
+		buffer_trap()
+	end
+
 	local dirty = rawget(buf, "__d")
 
 	if dirty then
-		local v = rawget(dirty, offset)
+		local v = dirty[index + 1]
 
 		if v ~= nil then
 			return v
 		end
 	end
 
-	local s = rawget(buf, "__s")
-
-	return string.byte(s, offset)
+	return string.byte(rawget(buf, "__s"), index + 1) or 0
 end
 
 -- SECTION buffer_create
@@ -80,49 +101,113 @@ end
 local function buffer_create(size)
 	local t = setmetatable({}, buffer_meta)
 
-	rawset(t, "__s", string.rep("\0", size))
+	rawset(t, "__s", "")
+	rawset(t, "__n", size)
 
 	return t
 end
 
 -- SECTION buffer_len
 local function buffer_len(buf)
-	return #buf
+	return rawget(buf, "__n")
+end
+
+-- SECTION buffer_check
+-- NEEDS buffer_trap
+-- Traps unless the whole range `[base + offset, base + offset + size)` lies
+-- inside `buf`. Multi-word accesses must call this first so a partially
+-- in-bounds access never writes or reads anything.
+local function buffer_check(buf, base, offset, size)
+	if base < 0 or base + offset + size > rawget(buf, "__n") then
+		buffer_trap()
+	end
+end
+
+-- SECTION buffer_resize
+local function buffer_resize(buf, size)
+	rawset(buf, "__n", size)
 end
 
 -- SECTION buffer_copy
--- NEEDS buffer_byte
+-- NEEDS buffer_trap
 -- NEEDS ensure_dirty
 local function buffer_copy(dest, dest_offset, src, offset, size)
+	if
+		size < 0
+		or dest_offset < 0
+		or offset < 0
+		or dest_offset + size > rawget(dest, "__n")
+		or offset + size > rawget(src, "__n")
+	then
+		buffer_trap()
+	end
+
 	if size == 0 then
 		return
 	end
 
-	ensure_dirty(dest)
+	local dest_d = ensure_dirty(dest)
+	local src_d = rawget(src, "__d")
+	local src_s = rawget(src, "__s")
 
-	for i = 0, size - 1 do
-		local idx = offset + i + 1
+	if dest == src and dest_offset > offset then
+		for i = size - 1, 0, -1 do
+			local from = offset + i + 1
+			local v = src_d[from]
 
-		dest[dest_offset + i + 1] = buffer_byte(src, idx)
+			if v == nil then
+				v = string.byte(src_s, from) or 0
+			end
+
+			dest_d[dest_offset + i + 1] = v
+		end
+
+		return
+	end
+
+	if src_d then
+		for i = 0, size - 1 do
+			local from = offset + i + 1
+			local v = src_d[from]
+
+			if v == nil then
+				v = string.byte(src_s, from) or 0
+			end
+
+			dest_d[dest_offset + i + 1] = v
+		end
+	else
+		for i = 0, size - 1 do
+			dest_d[dest_offset + i + 1] = string.byte(src_s, offset + i + 1) or 0
+		end
 	end
 end
 
 -- SECTION buffer_fill
+-- NEEDS buffer_trap
 -- NEEDS ensure_dirty
 local function buffer_fill(buf, offset, value, size)
-	ensure_dirty(buf)
+	if size < 0 or offset < 0 or offset + size > rawget(buf, "__n") then
+		buffer_trap()
+	end
+
+	if size == 0 then
+		return
+	end
+
+	local dirty = ensure_dirty(buf)
 
 	value = value % 256
 
-	for i = 1, size do
-		buf[offset + i] = value
+	for i = offset + 1, offset + size do
+		dirty[i] = value
 	end
 end
 
 -- SECTION buffer_read_i8
 -- NEEDS buffer_byte
-local function buffer_read_i8(buf, offset)
-	local value = buffer_byte(buf, offset + 1)
+local function buffer_read_i8(buf, base, offset)
+	local value = buffer_byte(buf, base, offset)
 
 	if value >= 128 then
 		return value - 256
@@ -133,14 +218,51 @@ end
 
 -- SECTION buffer_read_u8
 -- NEEDS buffer_byte
-local function buffer_read_u8(buf, offset)
-	return buffer_byte(buf, offset + 1)
+local function buffer_read_u8(buf, base, offset)
+	return buffer_byte(buf, base, offset)
+end
+
+-- SECTION buffer_read_u16
+-- NEEDS buffer_trap
+local function buffer_read_u16(buf, base, offset)
+	local index = base + offset
+
+	if base < 0 or index + 2 > rawget(buf, "__n") then
+		buffer_trap()
+	end
+
+	local o = index + 1
+	local s = rawget(buf, "__s")
+	local dirty = rawget(buf, "__d")
+
+	if dirty then
+		local v1 = dirty[o]
+		local v2 = dirty[o + 1]
+
+		if v1 == nil then
+			v1 = string.byte(s, o) or 0
+		end
+
+		if v2 == nil then
+			v2 = string.byte(s, o + 1) or 0
+		end
+
+		return v1 + v2 * 256
+	end
+
+	if o + 1 > #s then
+		return (string.byte(s, o) or 0) + (string.byte(s, o + 1) or 0) * 256
+	end
+
+	local v1, v2 = string.byte(s, o, o + 1)
+
+	return v1 + v2 * 256
 end
 
 -- SECTION buffer_read_i16
--- NEEDS buffer_byte
-local function buffer_read_i16(buf, offset)
-	local value = buffer_byte(buf, offset + 1) + buffer_byte(buf, offset + 2) * 256
+-- NEEDS buffer_read_u16
+local function buffer_read_i16(buf, base, offset)
+	local value = buffer_read_u16(buf, base, offset)
 
 	if value >= 32768 then
 		return value - 65536
@@ -149,19 +271,60 @@ local function buffer_read_i16(buf, offset)
 	return value
 end
 
--- SECTION buffer_read_u16
--- NEEDS buffer_byte
-local function buffer_read_u16(buf, offset)
-	return buffer_byte(buf, offset + 1) + buffer_byte(buf, offset + 2) * 256
+-- SECTION buffer_read_u32
+-- NEEDS buffer_trap
+local function buffer_read_u32(buf, base, offset)
+	local index = base + offset
+
+	if base < 0 or index + 4 > rawget(buf, "__n") then
+		buffer_trap()
+	end
+
+	local o = index + 1
+	local s = rawget(buf, "__s")
+	local dirty = rawget(buf, "__d")
+
+	if dirty then
+		local v1 = dirty[o]
+		local v2 = dirty[o + 1]
+		local v3 = dirty[o + 2]
+		local v4 = dirty[o + 3]
+
+		if v1 == nil then
+			v1 = string.byte(s, o) or 0
+		end
+
+		if v2 == nil then
+			v2 = string.byte(s, o + 1) or 0
+		end
+
+		if v3 == nil then
+			v3 = string.byte(s, o + 2) or 0
+		end
+
+		if v4 == nil then
+			v4 = string.byte(s, o + 3) or 0
+		end
+
+		return v1 + v2 * 256 + v3 * 65536 + v4 * 16777216
+	end
+
+	if o + 3 > #s then
+		return (string.byte(s, o) or 0)
+			+ (string.byte(s, o + 1) or 0) * 256
+			+ (string.byte(s, o + 2) or 0) * 65536
+			+ (string.byte(s, o + 3) or 0) * 16777216
+	end
+
+	local v1, v2, v3, v4 = string.byte(s, o, o + 3)
+
+	return v1 + v2 * 256 + v3 * 65536 + v4 * 16777216
 end
 
 -- SECTION buffer_read_i32
--- NEEDS buffer_byte
-local function buffer_read_i32(buf, offset)
-	local value = buffer_byte(buf, offset + 1)
-		+ buffer_byte(buf, offset + 2) * 256
-		+ buffer_byte(buf, offset + 3) * 65536
-		+ buffer_byte(buf, offset + 4) * 16777216
+-- NEEDS buffer_read_u32
+local function buffer_read_i32(buf, base, offset)
+	local value = buffer_read_u32(buf, base, offset)
 
 	if value >= 2147483648 then
 		return value - 4294967296
@@ -170,94 +333,117 @@ local function buffer_read_i32(buf, offset)
 	return value
 end
 
--- SECTION buffer_read_u32
--- NEEDS buffer_byte
-local function buffer_read_u32(buf, offset)
-	local dirty = rawget(buf, "__d")
-
-	if dirty then
-		local o = offset + 1
-		local v1 = rawget(dirty, o)
-		local v2 = rawget(dirty, o + 1)
-		local v3 = rawget(dirty, o + 2)
-		local v4 = rawget(dirty, o + 3)
-
-		if v1 ~= nil and v2 ~= nil and v3 ~= nil and v4 ~= nil then
-			return (v1 + v2 * 256 + v3 * 65536 + v4 * 16777216) % 4294967296
-		end
-	end
-
-	return (buffer_byte(buf, offset + 1)
-		+ buffer_byte(buf, offset + 2) * 256
-		+ buffer_byte(buf, offset + 3) * 65536
-		+ buffer_byte(buf, offset + 4) * 16777216) % 4294967296
-end
-
 -- SECTION buffer_read_f32
 -- NEEDS buffer_read_u32
 -- NEEDS from_bits_f32
-local function buffer_read_f32(buf, offset)
-	return from_bits_f32(buffer_read_u32(buf, offset))
+local function buffer_read_f32(buf, base, offset)
+	return from_bits_f32(buffer_read_u32(buf, base, offset))
 end
 
 -- SECTION buffer_read_f64
+-- NEEDS buffer_check
 -- NEEDS buffer_read_u32
 -- NEEDS from_bits_f64
-local function buffer_read_f64(buf, offset)
-	local lo = buffer_read_u32(buf, offset)
-	local hi = buffer_read_u32(buf, offset + 4)
+local function buffer_read_f64(buf, base, offset)
+	buffer_check(buf, base, offset, 8)
+
+	local lo = buffer_read_u32(buf, base, offset)
+	local hi = buffer_read_u32(buf, base, offset + 4)
 
 	return from_bits_f64(lo, hi)
 end
 
 -- SECTION buffer_write_u8
+-- NEEDS buffer_trap
 -- NEEDS ensure_dirty
-local function buffer_write_u8(buf, offset, value)
-	buf[offset + 1] = value % 256
+local function buffer_write_u8(buf, base, offset, value)
+	local index = base + offset
+
+	if base < 0 or index + 1 > rawget(buf, "__n") then
+		buffer_trap()
+	end
+
+	local dirty = ensure_dirty(buf)
+
+	dirty[index + 1] = value % 256
 end
 
 -- SECTION buffer_write_u16
+-- NEEDS buffer_trap
 -- NEEDS ensure_dirty
-local function buffer_write_u16(buf, offset, value)
-	buf[offset + 1] = value % 256
-	buf[offset + 2] = math.floor(value / 256) % 256
+local function buffer_write_u16(buf, base, offset, value)
+	local index = base + offset
+
+	if base < 0 or index + 2 > rawget(buf, "__n") then
+		buffer_trap()
+	end
+
+	local dirty = ensure_dirty(buf)
+
+	value = value % 65536
+
+	dirty[index + 1] = value % 256
+	dirty[index + 2] = math.floor(value / 256)
 end
 
 -- SECTION buffer_write_u32
+-- NEEDS buffer_trap
 -- NEEDS ensure_dirty
-local function buffer_write_u32(buf, offset, value)
+local function buffer_write_u32(buf, base, offset, value)
+	local index = base + offset
+
+	if base < 0 or index + 4 > rawget(buf, "__n") then
+		buffer_trap()
+	end
+
+	local dirty = ensure_dirty(buf)
+
 	value = value % 4294967296
 
-	buf[offset + 1] = value % 256
-	buf[offset + 2] = math.floor(value / 256) % 256
-	buf[offset + 3] = math.floor(value / 65536) % 256
-	buf[offset + 4] = math.floor(value / 16777216) % 256
+	dirty[index + 1] = value % 256
+	dirty[index + 2] = math.floor(value / 256) % 256
+	dirty[index + 3] = math.floor(value / 65536) % 256
+	dirty[index + 4] = math.floor(value / 16777216)
 end
 
 -- SECTION buffer_write_f32
 -- NEEDS buffer_write_u32
 -- NEEDS into_bits_f32
-local function buffer_write_f32(buf, offset, value)
-	buffer_write_u32(buf, offset, into_bits_f32(value))
+local function buffer_write_f32(buf, base, offset, value)
+	buffer_write_u32(buf, base, offset, into_bits_f32(value))
 end
 
 -- SECTION buffer_write_f64
+-- NEEDS buffer_check
 -- NEEDS buffer_write_u32
 -- NEEDS into_bits_f64
-local function buffer_write_f64(buf, offset, value)
+local function buffer_write_f64(buf, base, offset, value)
+	buffer_check(buf, base, offset, 8)
+
 	local lo, hi = into_bits_f64(value)
 
-	buffer_write_u32(buf, offset, lo)
-	buffer_write_u32(buf, offset + 4, hi)
+	buffer_write_u32(buf, base, offset, lo)
+	buffer_write_u32(buf, base, offset + 4, hi)
 end
 
 -- SECTION buffer_writestring
+-- NEEDS buffer_trap
 -- NEEDS ensure_dirty
 local function buffer_writestring(buf, offset, str)
-	ensure_dirty(buf)
+	local size = #str
 
-	for i = 1, #str do
-		buf[offset + i] = string.byte(str, i)
+	if offset < 0 or offset + size > rawget(buf, "__n") then
+		buffer_trap()
+	end
+
+	if size == 0 then
+		return
+	end
+
+	local dirty = ensure_dirty(buf)
+
+	for i = 1, size do
+		dirty[offset + i] = string.byte(str, i)
 	end
 end
 
@@ -370,7 +556,7 @@ local function into_bits_f32(source)
 
 	local mantissa, exponent = math.frexp(source)
 
-	if exponent > 127 then
+	if exponent > 128 then
 		local result = sign_bit + 0x7F800000
 
 		if result >= 2147483648 then

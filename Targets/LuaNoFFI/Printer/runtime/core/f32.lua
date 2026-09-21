@@ -29,9 +29,10 @@ end
 -- SECTION round_up_f32
 -- NEEDS from_bits_f32
 -- NEEDS into_bits_f32
+-- NEEDS math_ceil
 local function rt_round_up_f32(source)
 	source = from_bits_f32(source)
-	source = math.ceil(source)
+	source = math_ceil(source)
 	source = into_bits_f32(source)
 
 	return source
@@ -40,9 +41,10 @@ end
 -- SECTION round_down_f32
 -- NEEDS from_bits_f32
 -- NEEDS into_bits_f32
+-- NEEDS math_floor
 local function rt_round_down_f32(source)
 	source = from_bits_f32(source)
-	source = math.floor(source)
+	source = math_floor(source)
 	source = into_bits_f32(source)
 
 	return source
@@ -51,6 +53,7 @@ end
 -- SECTION truncate_f32
 -- NEEDS from_bits_f32
 -- NEEDS into_bits_f32
+-- NEEDS math_modf
 local function rt_truncate_f32(source)
 	source = from_bits_f32(source)
 	source = math_modf(source)
@@ -62,12 +65,23 @@ end
 -- SECTION nearest_f32
 -- NEEDS from_bits_f32
 -- NEEDS into_bits_f32
+-- NEEDS math_abs
+-- NEEDS math_modf
 local function rt_nearest_f32(source)
-	source = from_bits_f32(source)
-	source = math.floor(source + 0.5)
-	source = into_bits_f32(source)
+	local native = from_bits_f32(source)
+	local rounded, remainder = math_modf(native)
 
-	return source
+	remainder = math_abs(remainder)
+
+	if remainder > 0.5 or (remainder == 0.5 and rounded % 2 ~= 0) then
+		if native < 0 then
+			rounded = rounded - 1
+		else
+			rounded = rounded + 1
+		end
+	end
+
+	return into_bits_f32(rounded)
 end
 
 -- SECTION add_f32
@@ -100,14 +114,54 @@ end
 
 -- SECTION minimum_f32
 -- NEEDS from_bits_f32
+-- NEEDS into_bits_f32
 local function rt_minimum_f32(lhs, rhs)
-	if from_bits_f32(lhs) < from_bits_f32(rhs) then return lhs else return rhs end
+	local lhs_native = from_bits_f32(lhs)
+	local rhs_native = from_bits_f32(rhs)
+
+	if lhs_native ~= lhs_native or rhs_native ~= rhs_native then
+		return into_bits_f32(0 / 0)
+	end
+
+	if lhs_native == 0 and rhs_native == 0 then
+		if 1 / lhs_native < 0 then
+			return lhs
+		end
+
+		return rhs
+	end
+
+	if lhs_native < rhs_native then
+		return lhs
+	end
+
+	return rhs
 end
 
 -- SECTION maximum_f32
 -- NEEDS from_bits_f32
+-- NEEDS into_bits_f32
 local function rt_maximum_f32(lhs, rhs)
-	if from_bits_f32(lhs) > from_bits_f32(rhs) then return lhs else return rhs end
+	local lhs_native = from_bits_f32(lhs)
+	local rhs_native = from_bits_f32(rhs)
+
+	if lhs_native ~= lhs_native or rhs_native ~= rhs_native then
+		return into_bits_f32(0 / 0)
+	end
+
+	if lhs_native == 0 and rhs_native == 0 then
+		if 1 / lhs_native > 0 then
+			return lhs
+		end
+
+		return rhs
+	end
+
+	if lhs_native > rhs_native then
+		return lhs
+	end
+
+	return rhs
 end
 
 -- SECTION copy_sign_f32
@@ -164,58 +218,30 @@ end
 
 -- SECTION saturate_f32_to_s32
 -- NEEDS from_bits_f32
+-- NEEDS saturate_f64_to_s32
 local function rt_saturate_f32_to_s32(source)
-	source = from_bits_f32(source)
-
-	if source >= 2147483648.0 then
-		return 0x7FFFFFFF
-	elseif source < -2147483648.0 then
-		return -2147483648
-	elseif source >= 0 then
-		return math.floor(source + 0.5)
-	else
-		return math.ceil(source - 0.5)
-	end
+	return rt_saturate_f64_to_s32(from_bits_f32(source))
 end
 
 -- SECTION truncate_f32_to_s32
 -- NEEDS from_bits_f32
+-- NEEDS truncate_f64_to_s32
 local function rt_truncate_f32_to_s32(source)
-	source = from_bits_f32(source)
-
-	if source >= 2147483648.0 or source < -2147483648.0 then
-		error("integer overflow")
-	elseif source >= 0 then
-		return math.floor(source)
-	else
-		return math.ceil(source)
-	end
+	return rt_truncate_f64_to_s32(from_bits_f32(source))
 end
 
 -- SECTION saturate_f32_to_u32
 -- NEEDS from_bits_f32
+-- NEEDS saturate_f64_to_u32
 local function rt_saturate_f32_to_u32(source)
-	source = from_bits_f32(source)
-
-	if source >= 4294967296.0 then
-		return 0xFFFFFFFF
-	elseif source < 0 then
-		return 0
-	else
-		return math.floor(source + 0.5)
-	end
+	return rt_saturate_f64_to_u32(from_bits_f32(source))
 end
 
 -- SECTION truncate_f32_to_u32
 -- NEEDS from_bits_f32
+-- NEEDS truncate_f64_to_u32
 local function rt_truncate_f32_to_u32(source)
-	source = from_bits_f32(source)
-
-	if source >= 4294967296.0 or source < 0 then
-		error("integer overflow")
-	else
-		return math.floor(source)
-	end
+	return rt_truncate_f64_to_u32(from_bits_f32(source))
 end
 
 -- SECTION saturate_f32_to_s64

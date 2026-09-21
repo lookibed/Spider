@@ -121,6 +121,8 @@ pub struct MemoryStore {
 	pub destination: Location,
 	/// The source expression.
 	pub source: Expression,
+	/// The static byte offset added to the address.
+	pub offset: u32,
 	/// The store type.
 	pub kind: StoreType,
 }

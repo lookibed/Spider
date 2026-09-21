@@ -89,6 +89,7 @@ impl LuaNoFFIPrinter {
 	}
 
 	/// Returns the runtime helper section names directly referenced by the tree.
+	#[must_use]
 	pub fn runtime_names(&self) -> &[&'static str] {
 		&self.runtime_names
 	}

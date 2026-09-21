@@ -256,7 +256,7 @@ impl TableNew {
 
 impl TableGet {
 	fn accept<T: Visitor>(&self, visitor: &mut T) -> ControlFlow<T::Output> {
-		let Self { source } = self;
+		let Self { source, .. } = self;
 
 		source.accept(visitor)
 	}

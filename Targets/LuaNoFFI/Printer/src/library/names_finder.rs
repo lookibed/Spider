@@ -3,7 +3,7 @@ use core::ops::ControlFlow;
 use luanoffi_tree::{
 	LuaNoFFITree,
 	expression::{
-		Expression, ExtendType, GlobalGet, GlobalNew, IntegerBinaryOperation,
+		Expression, ExtendType, Function, GlobalGet, GlobalNew, IntegerBinaryOperation,
 		IntegerBinaryOperator, IntegerCompareOperation, IntegerCompareOperator,
 		IntegerConvertToNumber, IntegerExtend, IntegerNarrow, IntegerTransmuteToNumber,
 		IntegerType, IntegerUnaryOperation, IntegerUnaryOperator, IntegerWiden, LoadType,
@@ -69,8 +69,9 @@ impl NeedsName for IntegerBinaryOperation {
 		let Self { kind, operator, .. } = *self;
 
 		match (kind, operator) {
-			(IntegerType::I32, IntegerBinaryOperator::Add) => "add_i32",
-			(IntegerType::I32, IntegerBinaryOperator::Subtract) => "subtract_i32",
+			(IntegerType::I32, IntegerBinaryOperator::Add | IntegerBinaryOperator::Subtract) => {
+				"bit32_or"
+			}
 			(IntegerType::I32, IntegerBinaryOperator::Multiply) => "multiply_i32",
 			(IntegerType::I32, IntegerBinaryOperator::Divide { signed: true }) => "divide_s32",
 			(IntegerType::I32, IntegerBinaryOperator::Divide { signed: false }) => "divide_u32",
@@ -375,9 +376,23 @@ impl NeedsName for TableNew {
 	}
 }
 
+impl NeedsName for Function {
+	fn needs_name(&self) -> &'static str {
+		if self.key.is_some() {
+			"function_type"
+		} else {
+			""
+		}
+	}
+}
+
 impl NeedsName for TableGet {
 	fn needs_name(&self) -> &'static str {
-		"table_get"
+		if self.key.is_some() {
+			"table_get_function"
+		} else {
+			"table_get"
+		}
 	}
 }
 
@@ -408,7 +423,7 @@ impl NeedsName for MemoryLoad {
 			LoadType::I32_U8 => "load_i32_from_u8",
 			LoadType::I32_S16 => "load_i32_from_s16",
 			LoadType::I32_U16 => "load_i32_from_u16",
-			LoadType::I32 => "load_i32",
+			LoadType::I32 => "buffer_read_u32",
 			LoadType::I64_S8 => "load_i64_from_s8",
 			LoadType::I64_U8 => "load_i64_from_u8",
 			LoadType::I64_S16 => "load_i64_from_s16",
@@ -437,9 +452,10 @@ impl NeedsName for MemoryGrow {
 impl NeedsName for Expression {
 	fn needs_name(&self) -> &'static str {
 		match self {
-			Self::Function(_)
-			| Self::Scoped(_)
-			| Self::Import(_)
+			Self::Function(function) => function.needs_name(),
+			Self::Scoped(scoped) => scoped.function.needs_name(),
+
+			Self::Import(_)
 			| Self::Trap
 			| Self::Null
 			| Self::Local(_)

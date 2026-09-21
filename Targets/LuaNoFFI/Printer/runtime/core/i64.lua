@@ -24,6 +24,7 @@ end
 
 -- SECTION raw_leading_zeroes_i64
 -- NEEDS from_bits_i64
+-- NEEDS leading_zeroes_i32
 local function raw_leading_zeroes_i64(source)
 	local lo, hi = from_bits_i64(source)
 
@@ -40,6 +41,7 @@ end
 
 -- SECTION raw_trailing_zeroes_i64
 -- NEEDS from_bits_i64
+-- NEEDS trailing_zeroes_i32
 local function raw_trailing_zeroes_i64(source)
 	local lo, hi = from_bits_i64(source)
 
@@ -215,7 +217,7 @@ local function raw_unsigned_divide_u64(lhs, rhs)
 		end
 	end
 
-	return into_bits_i64(quotient_lo, quotient_hi)
+	return into_bits_i64(quotient_lo, quotient_hi), into_bits_i64(remainder_lo, remainder_hi)
 end
 
 -- SECTION divide_s64
@@ -246,13 +248,13 @@ local function rt_divide_s64(lhs, rhs)
 		rhs = rt_subtract_i64(into_bits_i64(0, 0), rhs)
 	end
 
-	local packed = raw_unsigned_divide_u64(lhs, rhs)
+	local quotient = raw_unsigned_divide_u64(lhs, rhs)
 
 	if lhs_negative ~= rhs_negative then
-		return rt_subtract_i64(into_bits_i64(0, 0), packed)
+		return rt_subtract_i64(into_bits_i64(0, 0), quotient)
 	end
 
-	return packed
+	return quotient
 end
 
 -- SECTION divide_u64
@@ -265,23 +267,56 @@ local function rt_divide_u64(lhs, rhs)
 		error("integer divide by zero")
 	end
 
-	return raw_unsigned_divide_u64(lhs, rhs)
+	local quotient = raw_unsigned_divide_u64(lhs, rhs)
+
+	return quotient
 end
 
 -- SECTION remainder_s64
--- NEEDS divide_s64
--- NEEDS multiply_i64
+-- NEEDS from_bits_i64
+-- NEEDS into_bits_i64
+-- NEEDS raw_unsigned_divide_u64
 -- NEEDS subtract_i64
 local function rt_remainder_s64(lhs, rhs)
-	return rt_subtract_i64(lhs, rt_multiply_i64(rt_divide_s64(lhs, rhs), rhs))
+	local rhs_lo, rhs_hi = from_bits_i64(rhs)
+
+	if rhs_lo == 0 and rhs_hi == 0 then
+		error("integer divide by zero")
+	end
+
+	local _, lhs_hi = from_bits_i64(lhs)
+	local lhs_negative = lhs_hi >= 0x80000000
+
+	if lhs_negative then
+		lhs = rt_subtract_i64(into_bits_i64(0, 0), lhs)
+	end
+
+	if rhs_hi >= 0x80000000 then
+		rhs = rt_subtract_i64(into_bits_i64(0, 0), rhs)
+	end
+
+	local _, remainder = raw_unsigned_divide_u64(lhs, rhs)
+
+	if lhs_negative then
+		return rt_subtract_i64(into_bits_i64(0, 0), remainder)
+	end
+
+	return remainder
 end
 
 -- SECTION remainder_u64
--- NEEDS divide_u64
--- NEEDS multiply_i64
--- NEEDS subtract_i64
+-- NEEDS from_bits_i64
+-- NEEDS raw_unsigned_divide_u64
 local function rt_remainder_u64(lhs, rhs)
-	return rt_subtract_i64(lhs, rt_multiply_i64(rt_divide_u64(lhs, rhs), rhs))
+	local rhs_lo, rhs_hi = from_bits_i64(rhs)
+
+	if rhs_lo == 0 and rhs_hi == 0 then
+		error("integer divide by zero")
+	end
+
+	local _, remainder = raw_unsigned_divide_u64(lhs, rhs)
+
+	return remainder
 end
 
 -- SECTION and_i64
@@ -420,12 +455,13 @@ end
 
 -- SECTION rotate_left_i64
 -- NEEDS bit32_and
+-- NEEDS from_bits_i64
 -- NEEDS or_i64
 -- NEEDS shift_left_i64
 -- NEEDS shift_right_u64
 local function rt_rotate_left_i64(lhs, rhs)
 	if type(rhs) == "table" then
-		rhs, _ = from_bits_i64(rhs)
+		rhs = from_bits_i64(rhs)
 	end
 
 	rhs = bit32_and(rhs, 0x3F)
@@ -439,12 +475,13 @@ end
 
 -- SECTION rotate_right_i64
 -- NEEDS bit32_and
+-- NEEDS from_bits_i64
 -- NEEDS or_i64
 -- NEEDS shift_left_i64
 -- NEEDS shift_right_u64
 local function rt_rotate_right_i64(lhs, rhs)
 	if type(rhs) == "table" then
-		rhs, _ = from_bits_i64(rhs)
+		rhs = from_bits_i64(rhs)
 	end
 
 	rhs = bit32_and(rhs, 0x3F)
@@ -550,12 +587,14 @@ end
 -- SECTION extend_s8_to_i64
 -- NEEDS into_bits_i64
 local function rt_extend_s8_to_i64(source)
-	if source >= 0x80 then
-		source = source - 0x100
+	if type(source) == "table" then
+		source = source[1]
 	end
 
-	if source < 0 then
-		return into_bits_i64(source, 0xFFFFFFFF)
+	source = source % 0x100
+
+	if source >= 0x80 then
+		return into_bits_i64(source - 0x100, 0xFFFFFFFF)
 	end
 
 	return into_bits_i64(source, 0)
@@ -564,12 +603,14 @@ end
 -- SECTION extend_s16_to_i64
 -- NEEDS into_bits_i64
 local function rt_extend_s16_to_i64(source)
-	if source >= 0x8000 then
-		source = source - 0x10000
+	if type(source) == "table" then
+		source = source[1]
 	end
 
-	if source < 0 then
-		return into_bits_i64(source, 0xFFFFFFFF)
+	source = source % 0x10000
+
+	if source >= 0x8000 then
+		return into_bits_i64(source - 0x10000, 0xFFFFFFFF)
 	end
 
 	return into_bits_i64(source, 0)
@@ -582,25 +623,57 @@ local function rt_extend_s32_to_i64(source)
 		source = source[1]
 	end
 
+	source = source % 0x100000000
+
 	if source >= 0x80000000 then
-		return into_bits_i64(source, 0xFFFFFFFF)
+		return into_bits_i64(source - 0x100000000, 0xFFFFFFFF)
 	end
 
 	return into_bits_i64(source, 0)
 end
 
 -- SECTION convert_s64_to_f32
--- NEEDS convert_s64_to_f64
+-- NEEDS from_bits_i64
 -- NEEDS into_bits_f32
+-- NEEDS into_bits_i64
+-- NEEDS raw_convert_u64_to_odd_f64
+-- NEEDS subtract_i64
 local function rt_convert_s64_to_f32(source)
-	return into_bits_f32(rt_convert_s64_to_f64(source))
+	local _, hi = from_bits_i64(source)
+
+	if hi >= 0x80000000 then
+		source = rt_subtract_i64(into_bits_i64(0, 0), source)
+
+		return into_bits_f32(-raw_convert_u64_to_odd_f64(source))
+	end
+
+	return into_bits_f32(raw_convert_u64_to_odd_f64(source))
+end
+
+-- SECTION raw_convert_u64_to_odd_f64
+-- NEEDS from_bits_i64
+-- NEEDS math_floor
+local function raw_convert_u64_to_odd_f64(source)
+	local lo, hi = from_bits_i64(source)
+
+	if hi < 0x200000 then
+		return hi * 4294967296.0 + lo
+	end
+
+	local kept = math_floor(lo / 2048)
+
+	if kept * 2048 ~= lo and kept % 2 == 0 then
+		kept = kept + 1
+	end
+
+	return hi * 4294967296.0 + kept * 2048.0
 end
 
 -- SECTION convert_u64_to_f32
--- NEEDS convert_u64_to_f64
 -- NEEDS into_bits_f32
+-- NEEDS raw_convert_u64_to_odd_f64
 local function rt_convert_u64_to_f32(source)
-	return into_bits_f32(rt_convert_u64_to_f64(source))
+	return into_bits_f32(raw_convert_u64_to_odd_f64(source))
 end
 
 -- SECTION convert_s64_to_f64

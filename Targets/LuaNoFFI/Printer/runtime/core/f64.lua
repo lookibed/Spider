@@ -1,6 +1,7 @@
 -- SECTION absolute_f64
+-- NEEDS math_abs
 local function rt_absolute_f64(source)
-	return math.abs(source)
+	return math_abs(source)
 end
 
 -- SECTION negate_f64
@@ -17,30 +18,44 @@ end
 -- SECTION round_up_f64
 -- NEEDS math_ceil
 local function rt_round_up_f64(source)
-	return math_ceil(source)
+	local result = math_ceil(source)
+
+	return result
 end
 
 -- SECTION round_down_f64
 -- NEEDS math_floor
 local function rt_round_down_f64(source)
-	return math_floor(source)
+	local result = math_floor(source)
+
+	return result
 end
 
 -- SECTION truncate_f64
 -- NEEDS math_modf
 local function rt_truncate_f64(source)
-	return math_modf(source)
+	local result = math_modf(source)
+
+	return result
 end
 
 -- SECTION nearest_f64
--- NEEDS math_ceil
--- NEEDS math_floor
+-- NEEDS math_abs
+-- NEEDS math_modf
 local function rt_nearest_f64(source)
-	if source >= 0 then
-		return math_floor(source + 0.5)
+	local rounded, remainder = math_modf(source)
+
+	remainder = math_abs(remainder)
+
+	if remainder > 0.5 or (remainder == 0.5 and rounded % 2 ~= 0) then
+		if source < 0 then
+			rounded = rounded - 1
+		else
+			rounded = rounded + 1
+		end
 	end
 
-	return math_ceil(source - 0.5)
+	return rounded
 end
 
 -- SECTION add_f64
@@ -65,6 +80,18 @@ end
 
 -- SECTION minimum_f64
 local function rt_minimum_f64(lhs, rhs)
+	if lhs ~= lhs or rhs ~= rhs then
+		return 0 / 0
+	end
+
+	if lhs == 0 and rhs == 0 then
+		if 1 / lhs < 0 then
+			return lhs
+		end
+
+		return rhs
+	end
+
 	if lhs < rhs then
 		return lhs
 	end
@@ -74,6 +101,18 @@ end
 
 -- SECTION maximum_f64
 local function rt_maximum_f64(lhs, rhs)
+	if lhs ~= lhs or rhs ~= rhs then
+		return 0 / 0
+	end
+
+	if lhs == 0 and rhs == 0 then
+		if 1 / lhs > 0 then
+			return lhs
+		end
+
+		return rhs
+	end
+
 	if lhs > rhs then
 		return lhs
 	end
@@ -84,11 +123,11 @@ end
 -- SECTION copy_sign_f64
 -- NEEDS math_abs
 local function rt_copy_sign_f64(lhs, rhs)
-	if rhs >= 0 then
-		return math_abs(lhs)
+	if rhs < 0 or (rhs == 0 and 1 / rhs < 0) then
+		return -math_abs(lhs)
 	end
 
-	return -math_abs(lhs)
+	return math_abs(lhs)
 end
 
 -- SECTION equal_f64
@@ -122,64 +161,87 @@ local function rt_greater_than_equal_f64(lhs, rhs)
 end
 
 -- SECTION narrow_f64
+-- NEEDS into_bits_f32
 local function rt_narrow_f64(source)
-	return source
+	return into_bits_f32(source)
 end
 
 -- SECTION saturate_f64_to_s32
+-- NEEDS force_i32
+-- NEEDS math_modf
 local function rt_saturate_f64_to_s32(source)
-	if source >= 2147483648.0 then
-		return 0x7FFFFFFF
-	end
-
-	if source < -2147483648.0 then
-		return -2147483648
-	end
-
-	if source >= 0 then
-		return math.floor(source + 0.5)
-	end
-
-	return math.ceil(source - 0.5)
-end
-
--- SECTION truncate_f64_to_s32
-local function rt_truncate_f64_to_s32(source)
-	if source >= 2147483648.0 or source < -2147483648.0 then
-		error("integer overflow")
-	end
-
-	if source >= 0 then
-		return math.floor(source)
-	end
-
-	return math.ceil(source)
-end
-
--- SECTION saturate_f64_to_u32
-local function rt_saturate_f64_to_u32(source)
-	if source >= 4294967296.0 then
-		return 0xFFFFFFFF
-	end
-
-	if source < 0 then
+	if source ~= source then
 		return 0
 	end
 
-	return math.floor(source + 0.5)
+	if source >= 2147483648.0 then
+		return force_i32(0x7FFFFFFF)
+	end
+
+	if source <= -2147483648.0 then
+		return force_i32(-2147483648)
+	end
+
+	source = math_modf(source)
+
+	return force_i32(source)
+end
+
+-- SECTION truncate_f64_to_s32
+-- NEEDS force_i32
+-- NEEDS math_modf
+local function rt_truncate_f64_to_s32(source)
+	source = math_modf(source)
+
+	if source >= 2147483648.0 or source < -2147483648.0 then
+		error("integer overflow")
+	elseif source ~= source then
+		error("invalid conversion to integer")
+	end
+
+	return force_i32(source)
+end
+
+-- SECTION saturate_f64_to_u32
+-- NEEDS force_i32
+-- NEEDS math_modf
+local function rt_saturate_f64_to_u32(source)
+	if source ~= source then
+		return 0
+	end
+
+	if source >= 4294967296.0 then
+		return force_i32(0xFFFFFFFF)
+	end
+
+	if source <= 0 then
+		return 0
+	end
+
+	source = math_modf(source)
+
+	return force_i32(source)
 end
 
 -- SECTION truncate_f64_to_u32
+-- NEEDS force_i32
+-- NEEDS math_modf
 local function rt_truncate_f64_to_u32(source)
+	source = math_modf(source)
+
 	if source >= 4294967296.0 or source < 0 then
 		error("integer overflow")
+	elseif source ~= source then
+		error("invalid conversion to integer")
 	end
 
-	return math.floor(source)
+	return force_i32(source)
 end
 
 -- SECTION saturate_f64_to_s64
 -- NEEDS into_bits_i64
+-- NEEDS math_floor
+-- NEEDS math_modf
 local function rt_saturate_f64_to_s64(source)
 	if source ~= source then
 		return into_bits_i64(0, 0)
@@ -193,25 +255,40 @@ local function rt_saturate_f64_to_s64(source)
 		return into_bits_i64(0, 0x80000000)
 	end
 
-	if source < 0 then
-		source = math.ceil(source)
-		local positive = -source
-		local hi = math.floor(positive / 4294967296.0)
-		local lo = positive - hi * 4294967296.0
+	source = math_modf(source)
 
-		return rt_subtract_i64(into_bits_i64(0, 0), into_bits_i64(lo, hi))
+	local negative = source < 0
+
+	if negative then
+		source = -source
 	end
 
-	source = math.floor(source)
+	local hi = math_floor(source / 4294967296.0)
+	local lo = source - hi * 4294967296.0
 
-	return into_bits_i64(source % 4294967296.0, math.floor(source / 4294967296.0))
+	if negative then
+		lo = -lo
+		hi = -hi
+
+		if lo ~= 0 then
+			lo = lo + 4294967296.0
+			hi = hi - 1
+		end
+	end
+
+	return into_bits_i64(lo, hi)
 end
 
 -- SECTION truncate_f64_to_s64
+-- NEEDS math_modf
 -- NEEDS saturate_f64_to_s64
 local function rt_truncate_f64_to_s64(source)
+	source = math_modf(source)
+
 	if source >= 9223372036854775808.0 or source < -9223372036854775808.0 then
 		error("integer overflow")
+	elseif source ~= source then
+		error("invalid conversion to integer")
 	end
 
 	return rt_saturate_f64_to_s64(source)
@@ -219,6 +296,8 @@ end
 
 -- SECTION saturate_f64_to_u64
 -- NEEDS into_bits_i64
+-- NEEDS math_floor
+-- NEEDS math_modf
 local function rt_saturate_f64_to_u64(source)
 	if source ~= source or source <= 0 then
 		return into_bits_i64(0, 0)
@@ -228,16 +307,24 @@ local function rt_saturate_f64_to_u64(source)
 		return into_bits_i64(0xFFFFFFFF, 0xFFFFFFFF)
 	end
 
-	source = math.floor(source)
+	source = math_modf(source)
 
-	return into_bits_i64(source % 4294967296.0, math.floor(source / 4294967296.0))
+	local hi = math_floor(source / 4294967296.0)
+	local lo = source - hi * 4294967296.0
+
+	return into_bits_i64(lo, hi)
 end
 
 -- SECTION truncate_f64_to_u64
+-- NEEDS math_modf
 -- NEEDS saturate_f64_to_u64
 local function rt_truncate_f64_to_u64(source)
+	source = math_modf(source)
+
 	if source >= 18446744073709551616.0 or source < 0 then
 		error("integer overflow")
+	elseif source ~= source then
+		error("invalid conversion to integer")
 	end
 
 	return rt_saturate_f64_to_u64(source)

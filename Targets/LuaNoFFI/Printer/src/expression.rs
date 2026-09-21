@@ -3,13 +3,12 @@ use std::io::{Result, Write};
 
 use luanoffi_tree::expression::{
 	BooleanToInteger, Call, Expression, Function, GlobalGet, GlobalNew, Import,
-	IntegerBinaryOperation, IntegerBinaryOperator, IntegerCompareOperation,
-	IntegerConvertToNumber, IntegerExtend, IntegerNarrow, IntegerTransmuteToNumber,
-	IntegerType, IntegerUnaryOperation, IntegerWiden, LoadType, Local, Location,
-	MemoryGrow, MemoryLoad, MemoryNew, MemorySize, Name, NumberBinaryOperation,
-	NumberCompareOperation, NumberNarrow, NumberTransmuteToInteger,
-	NumberTruncateToInteger, NumberUnaryOperation, NumberWiden, RefIsNull, Scoped,
-	TableGet, TableGrow, TableNew, TableSize,
+	IntegerBinaryOperation, IntegerBinaryOperator, IntegerCompareOperation, IntegerConvertToNumber,
+	IntegerExtend, IntegerNarrow, IntegerTransmuteToNumber, IntegerType, IntegerUnaryOperation,
+	IntegerWiden, LoadType, Local, Location, MemoryGrow, MemoryLoad, MemoryNew, MemorySize, Name,
+	NumberBinaryOperation, NumberCompareOperation, NumberNarrow, NumberTransmuteToInteger,
+	NumberTruncateToInteger, NumberUnaryOperation, NumberWiden, RefIsNull, Scoped, TableGet,
+	TableGrow, TableNew, TableSize,
 };
 use luanoffi_tree::statement::Statement;
 
@@ -19,7 +18,11 @@ const PACKED_SCOPED_DEPENDENCIES_THRESHOLD: usize = 48;
 const PACKED_SCOPED_DEPENDENCIES_NAME: &str = "__spider_scoped_dependencies";
 const PACKED_SCOPED_DEPENDENCY_ARGUMENT_PREFIX: &str = "__spider_scoped_dependency_";
 
-pub fn fmt_delimited<T, I>(items: I, printer: &mut LuaNoFFIPrinter, out: &mut dyn Write) -> Result<()>
+pub fn fmt_delimited<T, I>(
+	items: I,
+	printer: &mut LuaNoFFIPrinter,
+	out: &mut dyn Write,
+) -> Result<()>
 where
 	T: Print,
 	I: IntoIterator<Item = T>,
@@ -79,12 +82,12 @@ fn print_function_body(
 		let mut previous = bindings
 			.iter()
 			.map(|(name, index)| {
-				let previous = printer.take_exact_name(*name);
+				let taken = printer.take_exact_name(*name);
 				printer.set_exact_name(
 					*name,
 					Arc::from(format!("{PACKED_SCOPED_DEPENDENCIES_NAME}[{}]", index + 1)),
 				);
-				(*name, previous)
+				(*name, taken)
 			})
 			.collect::<Vec<_>>();
 
@@ -92,9 +95,7 @@ fn print_function_body(
 		let mut body_index = 0;
 
 		while let Some(Statement::Assign(assign)) = code.list.get(body_index) {
-			let destination = if let Local::Fast { name } = assign.destination {
-				name
-			} else {
+			let Local::Fast { name: destination } = assign.destination else {
 				break;
 			};
 
@@ -128,9 +129,9 @@ fn print_function_body(
 			writeln!(out)?;
 		}
 
-		for (name, previous) in previous {
-			if let Some(previous) = previous {
-				printer.set_exact_name(name, previous);
+		for (name, restored) in previous {
+			if let Some(restored) = restored {
+				printer.set_exact_name(name, restored);
 			}
 		}
 
@@ -164,25 +165,22 @@ impl Print for Name {
 	}
 }
 
-pub fn fmt_locals(names: &[Name], printer: &mut LuaNoFFIPrinter, out: &mut dyn Write) -> Result<()> {
+pub fn fmt_locals(
+	names: &[Name],
+	printer: &mut LuaNoFFIPrinter,
+	out: &mut dyn Write,
+) -> Result<()> {
 	if names.is_empty() {
 		return Ok(());
 	}
 
+	// Registers start out unassigned: the lifter seeds every WebAssembly local
+	// with an explicit typed constant (`0`, `into_bits_i64(0, 0)`, `nil`, ...),
+	// so a blanket `= 0` here would be wrong for `i64` and reference locals.
 	printer.tab(out)?;
 	write!(out, "local ")?;
 
 	fmt_delimited(names.iter().copied(), printer, out)?;
-
-	write!(out, " = ")?;
-
-	for (index, _) in names.iter().enumerate() {
-		if index != 0 {
-			write!(out, ", ")?;
-		}
-
-		write!(out, "0")?;
-	}
 
 	writeln!(out)
 }
@@ -198,12 +196,29 @@ impl Print for Local {
 	}
 }
 
+/// Opens the call that registers a function value's WebAssembly type, if it has one.
+fn print_function_type_open(key: Option<&str>, out: &mut dyn Write) -> Result<()> {
+	if key.is_some() {
+		write!(out, "rt_function_type(")?;
+	}
+
+	Ok(())
+}
+
+/// Closes the call opened by [`print_function_type_open`].
+fn print_function_type_close(key: Option<&str>, out: &mut dyn Write) -> Result<()> {
+	if let Some(key) = key {
+		write!(out, ", \"{key}\")")?;
+	}
+
+	Ok(())
+}
+
 impl Print for Function {
 	fn print(&self, printer: &mut LuaNoFFIPrinter, out: &mut dyn Write) -> Result<()> {
-		let Self {
-			arguments,
-			..
-		} = self;
+		let Self { arguments, key, .. } = self;
+
+		print_function_type_open(key.as_deref(), out)?;
 
 		write!(out, "(function(")?;
 
@@ -217,7 +232,9 @@ impl Print for Function {
 		printer.outdent();
 
 		printer.tab(out)?;
-		write!(out, "end)")
+		write!(out, "end)")?;
+
+		print_function_type_close(key.as_deref(), out)
 	}
 }
 
@@ -278,6 +295,9 @@ impl Print for Scoped {
 
 			printer.tab(out)?;
 			write!(out, "return ")?;
+
+			print_function_type_open(function.key.as_deref(), out)?;
+
 			write!(out, "(function(")?;
 			fmt_delimited(&function.arguments, printer, out)?;
 			writeln!(out, ")")?;
@@ -293,6 +313,8 @@ impl Print for Scoped {
 
 			printer.tab(out)?;
 			write!(out, "end)")?;
+
+			print_function_type_close(function.key.as_deref(), out)?;
 
 			printer.outdent();
 			writeln!(out)?;
@@ -347,7 +369,7 @@ impl Print for i64 {
 	fn print(&self, _printer: &mut LuaNoFFIPrinter, out: &mut dyn Write) -> Result<()> {
 		let bits = u64::from_ne_bytes(self.to_ne_bytes());
 		let lo = bits & 0xFFFF_FFFF;
-		let hi = bits >> 32;
+		let hi = bits >> 32_u32;
 
 		write!(out, "into_bits_i64({lo}, {hi})")
 	}
@@ -370,7 +392,7 @@ impl Print for f64 {
 	fn print(&self, _printer: &mut LuaNoFFIPrinter, out: &mut dyn Write) -> Result<()> {
 		let bits = u64::from_ne_bytes(self.to_ne_bytes());
 		let lo = bits & 0xFFFF_FFFF;
-		let hi = bits >> 32;
+		let hi = bits >> 32_u32;
 
 		write!(out, "from_bits_f64({lo}, {hi}) --[[ {self}_f64 ]]")
 	}
@@ -401,7 +423,7 @@ impl Print for BooleanToInteger {
 
 		source.print(printer, out)?;
 
-		write!(out, " and 1) or 0")
+		write!(out, " and 1 or 0)")
 	}
 }
 
@@ -437,7 +459,10 @@ impl Print for IntegerBinaryOperation {
 		use IntegerType::I32;
 
 		let Self {
-			lhs, rhs, kind, operator,
+			lhs,
+			rhs,
+			kind,
+			operator,
 		} = self;
 
 		match (*kind, *operator) {
@@ -726,13 +751,17 @@ impl Print for TableNew {
 
 impl Print for TableGet {
 	fn print(&self, printer: &mut LuaNoFFIPrinter, out: &mut dyn Write) -> Result<()> {
-		let Self { source } = self;
+		let Self { source, key } = self;
 
 		let intrinsic = self.needs_name();
 
 		write!(out, "rt_{intrinsic}(")?;
 
 		source.print(printer, out)?;
+
+		if let Some(key) = key {
+			write!(out, ", \"{key}\"")?;
+		}
 
 		write!(out, ")")
 	}
@@ -800,27 +829,24 @@ impl Print for MemoryLoad {
 
 		let Self {
 			source: Location { reference, offset },
+			offset: static_offset,
 			kind,
 		} = self;
 
-		match *kind {
-			I32 => {
-				write!(out, "buffer_read_u32(")?;
-				reference.print(printer, out)?;
-				write!(out, "[1], ")?;
-				offset.print(printer, out)?;
-				write!(out, ")")
-			}
-			_ => {
-				let intrinsic = self.needs_name();
+		if matches!(kind, I32) {
+			write!(out, "buffer_read_u32(")?;
+			reference.print(printer, out)?;
+			write!(out, "[1], ")?;
+		} else {
+			let intrinsic = self.needs_name();
 
-				write!(out, "rt_{intrinsic}(")?;
-				reference.print(printer, out)?;
-				write!(out, ", ")?;
-				offset.print(printer, out)?;
-				write!(out, ")")
-			}
+			write!(out, "rt_{intrinsic}(")?;
+			reference.print(printer, out)?;
+			write!(out, ", ")?;
 		}
+
+		offset.print(printer, out)?;
+		write!(out, ", {static_offset})")
 	}
 }
 
