@@ -122,6 +122,7 @@ impl DataHandler {
 		stack: u16,
 		code: Sequence,
 		returns: Vec<Expression>,
+		key: Option<Arc<str>>,
 	) -> Expression {
 		let function = Function {
 			arguments,
@@ -129,6 +130,7 @@ impl DataHandler {
 			stack,
 			code,
 			returns,
+			key,
 		};
 
 		if dependencies.is_empty() {
@@ -433,9 +435,10 @@ impl DataHandler {
 		Expression::TableNew(expression.into())
 	}
 
-	pub fn load_table_get(&mut self, node: simple::TableGet) -> Expression {
+	pub fn load_table_get(&mut self, node: &simple::TableGet) -> Expression {
 		let expression = TableGet {
 			source: self.load_location(node.source),
+			key: node.key.clone(),
 		};
 
 		Expression::TableGet(expression.into())
@@ -462,6 +465,7 @@ impl DataHandler {
 	pub fn load_memory_load(&mut self, node: simple::MemoryLoad) -> Expression {
 		let expression = MemoryLoad {
 			source: self.load_location(node.source),
+			offset: node.offset,
 			kind: node.kind,
 		};
 

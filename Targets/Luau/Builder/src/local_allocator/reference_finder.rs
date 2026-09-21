@@ -176,8 +176,8 @@ fn handle_global_set(
 	add_state_assignment(assignments, graph, source);
 }
 
-fn handle_table_get(assignments: &mut HashMap<Link, Link>, id: u32, node: TableGet) {
-	let TableGet { source } = node;
+fn handle_table_get(assignments: &mut HashMap<Link, Link>, id: u32, node: &TableGet) {
+	let TableGet { source, .. } = node;
 
 	assignments.insert(source.reference, Link(id, TableGet::STATE_PORT));
 }
@@ -323,7 +323,7 @@ fn handle_node(assignments: &mut HashMap<Link, Link>, graph: &DataFlowGraph, id:
 		Node::Fence(ref node) => handle_fence(assignments, id, node),
 		Node::GlobalGet(node) => handle_global_get(assignments, id, node),
 		Node::GlobalSet(node) => handle_global_set(assignments, graph, id, node),
-		Node::TableGet(node) => handle_table_get(assignments, id, node),
+		Node::TableGet(ref node) => handle_table_get(assignments, id, node),
 		Node::TableSet(node) => handle_table_set(assignments, id, node),
 		Node::TableSize(node) => handle_table_size(assignments, id, node),
 		Node::TableGrow(node) => handle_table_grow(assignments, id, node),

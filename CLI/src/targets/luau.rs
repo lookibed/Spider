@@ -31,6 +31,7 @@ fn print_tree(tree: &LuauTree, out: &mut dyn Write) -> std::io::Result<()> {
 	let mut printer = LuauPrinter::new();
 
 	printer.print(tree, out)?;
+	writeln!(out, "return module")?;
 	out.flush()
 }
 

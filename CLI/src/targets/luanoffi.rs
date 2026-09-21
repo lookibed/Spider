@@ -35,6 +35,7 @@ fn print_tree(tree: &LuaNoFFITree, out: &mut dyn Write) -> std::io::Result<()> {
 	printer.set_runtime_names(references);
 
 	printer.print(tree, out)?;
+	writeln!(out, "return module")?;
 	out.flush()
 }
 

@@ -3,7 +3,7 @@ use core::ops::ControlFlow;
 use luau_tree::{
 	LuauTree,
 	expression::{
-		Expression, ExtendType, GlobalGet, GlobalNew, IntegerBinaryOperation,
+		Expression, ExtendType, Function, GlobalGet, GlobalNew, IntegerBinaryOperation,
 		IntegerBinaryOperator, IntegerCompareOperation, IntegerCompareOperator,
 		IntegerConvertToNumber, IntegerExtend, IntegerNarrow, IntegerTransmuteToNumber,
 		IntegerType, IntegerUnaryOperation, IntegerUnaryOperator, IntegerWiden, LoadType,
@@ -379,9 +379,23 @@ impl NeedsName for TableNew {
 	}
 }
 
+impl NeedsName for Function {
+	fn needs_name(&self) -> &'static str {
+		if self.key.is_some() {
+			"function_type"
+		} else {
+			""
+		}
+	}
+}
+
 impl NeedsName for TableGet {
 	fn needs_name(&self) -> &'static str {
-		"table_get"
+		if self.key.is_some() {
+			"table_get_function"
+		} else {
+			"table_get"
+		}
 	}
 }
 
@@ -441,9 +455,10 @@ impl NeedsName for MemoryGrow {
 impl NeedsName for Expression {
 	fn needs_name(&self) -> &'static str {
 		match self {
-			Self::Function(_)
-			| Self::Scoped(_)
-			| Self::Match(_)
+			Self::Function(function) => function.needs_name(),
+			Self::Scoped(scoped) => scoped.function.needs_name(),
+
+			Self::Match(_)
 			| Self::Import(_)
 			| Self::Trap
 			| Self::Null

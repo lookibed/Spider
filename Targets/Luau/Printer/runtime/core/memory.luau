@@ -20,8 +20,10 @@ end
 -- NEEDS bit32_or
 -- NEEDS buffer_read_i8
 -- NEEDS memory_type
-local function rt_load_i32_from_s8(source: Memory, offset: number): number
-	local result = buffer_read_i8(source[1], offset)
+local function rt_load_i32_from_s8(source: Memory, base: number, offset: number): number
+	local index = base + offset
+
+	local result = buffer_read_i8(source[1], index)
 
 	result = bit32_or(result, 0)
 
@@ -31,8 +33,10 @@ end
 -- SECTION load_i32_from_u8
 -- NEEDS buffer_read_u8
 -- NEEDS memory_type
-local function rt_load_i32_from_u8(source: Memory, offset: number): number
-	local result = buffer_read_u8(source[1], offset)
+local function rt_load_i32_from_u8(source: Memory, base: number, offset: number): number
+	local index = base + offset
+
+	local result = buffer_read_u8(source[1], index)
 
 	return result
 end
@@ -41,8 +45,10 @@ end
 -- NEEDS bit32_or
 -- NEEDS buffer_read_i16
 -- NEEDS memory_type
-local function rt_load_i32_from_s16(source: Memory, offset: number): number
-	local result = buffer_read_i16(source[1], offset)
+local function rt_load_i32_from_s16(source: Memory, base: number, offset: number): number
+	local index = base + offset
+
+	local result = buffer_read_i16(source[1], index)
 
 	result = bit32_or(result, 0)
 
@@ -52,8 +58,10 @@ end
 -- SECTION load_i32_from_u16
 -- NEEDS buffer_read_u16
 -- NEEDS memory_type
-local function rt_load_i32_from_u16(source: Memory, offset: number): number
-	local result = buffer_read_u16(source[1], offset)
+local function rt_load_i32_from_u16(source: Memory, base: number, offset: number): number
+	local index = base + offset
+
+	local result = buffer_read_u16(source[1], index)
 
 	return result
 end
@@ -61,8 +69,10 @@ end
 -- SECTION load_i32
 -- NEEDS buffer_read_u32
 -- NEEDS memory_type
-local function rt_load_i32(source: Memory, offset: number): number
-	local result = buffer_read_u32(source[1], offset)
+local function rt_load_i32(source: Memory, base: number, offset: number): number
+	local index = base + offset
+
+	local result = buffer_read_u32(source[1], index)
 
 	return result
 end
@@ -71,8 +81,10 @@ end
 -- NEEDS buffer_read_i8
 -- NEEDS into_bits_i64
 -- NEEDS memory_type
-local function rt_load_i64_from_s8(source: Memory, offset: number): number
-	local source = buffer_read_i8(source[1], offset)
+local function rt_load_i64_from_s8(source: Memory, base: number, offset: number): number
+	local index = base + offset
+
+	local source = buffer_read_i8(source[1], index)
 
 	return if source >= 0 then into_bits_i64(source, 0) else into_bits_i64(source + 0x1_0000_0000, 0xFFFF_FFFF)
 end
@@ -81,8 +93,10 @@ end
 -- NEEDS buffer_read_u8
 -- NEEDS into_bits_i64
 -- NEEDS memory_type
-local function rt_load_i64_from_u8(source: Memory, offset: number): number
-	local source = buffer_read_u8(source[1], offset)
+local function rt_load_i64_from_u8(source: Memory, base: number, offset: number): number
+	local index = base + offset
+
+	local source = buffer_read_u8(source[1], index)
 
 	return into_bits_i64(source, 0)
 end
@@ -91,8 +105,10 @@ end
 -- NEEDS buffer_read_i16
 -- NEEDS into_bits_i64
 -- NEEDS memory_type
-local function rt_load_i64_from_s16(source: Memory, offset: number): number
-	local source = buffer_read_i16(source[1], offset)
+local function rt_load_i64_from_s16(source: Memory, base: number, offset: number): number
+	local index = base + offset
+
+	local source = buffer_read_i16(source[1], index)
 
 	return if source >= 0 then into_bits_i64(source, 0) else into_bits_i64(source + 0x1_0000_0000, 0xFFFF_FFFF)
 end
@@ -101,8 +117,10 @@ end
 -- NEEDS buffer_read_u16
 -- NEEDS into_bits_i64
 -- NEEDS memory_type
-local function rt_load_i64_from_u16(source: Memory, offset: number): number
-	local source = buffer_read_u16(source[1], offset)
+local function rt_load_i64_from_u16(source: Memory, base: number, offset: number): number
+	local index = base + offset
+
+	local source = buffer_read_u16(source[1], index)
 
 	return into_bits_i64(source, 0)
 end
@@ -111,8 +129,10 @@ end
 -- NEEDS buffer_read_i32
 -- NEEDS into_bits_i64
 -- NEEDS memory_type
-local function rt_load_i64_from_s32(source: Memory, offset: number): number
-	local source = buffer_read_i32(source[1], offset)
+local function rt_load_i64_from_s32(source: Memory, base: number, offset: number): number
+	local index = base + offset
+
+	local source = buffer_read_i32(source[1], index)
 
 	return if source >= 0 then into_bits_i64(source, 0) else into_bits_i64(source + 0x1_0000_0000, 0xFFFF_FFFF)
 end
@@ -121,8 +141,10 @@ end
 -- NEEDS buffer_read_u32
 -- NEEDS into_bits_i64
 -- NEEDS memory_type
-local function rt_load_i64_from_u32(source: Memory, offset: number): number
-	local source = buffer_read_u32(source[1], offset)
+local function rt_load_i64_from_u32(source: Memory, base: number, offset: number): number
+	local index = base + offset
+
+	local source = buffer_read_u32(source[1], index)
 
 	return into_bits_i64(source, 0)
 end
@@ -131,10 +153,12 @@ end
 -- NEEDS buffer_read_u32
 -- NEEDS into_bits_i64
 -- NEEDS memory_type
-local function rt_load_i64(source: Memory, offset: number): number
+local function rt_load_i64(source: Memory, base: number, offset: number): number
+	local index = base + offset
+
 	local memory = source[1]
-	local source_1 = buffer_read_u32(memory, offset)
-	local source_2 = buffer_read_u32(memory, offset + 4)
+	local source_1 = buffer_read_u32(memory, index)
+	local source_2 = buffer_read_u32(memory, index + 4)
 
 	return into_bits_i64(source_1, source_2)
 end
@@ -142,91 +166,113 @@ end
 -- SECTION load_f32
 -- NEEDS buffer_read_u32
 -- NEEDS memory_type
-local function rt_load_f32(source: Memory, offset: number): number
-	return buffer_read_u32(source[1], offset)
+local function rt_load_f32(source: Memory, base: number, offset: number): number
+	local index = base + offset
+
+	return buffer_read_u32(source[1], index)
 end
 
 -- SECTION load_f64
 -- NEEDS buffer_read_f64
 -- NEEDS memory_type
-local function rt_load_f64(source: Memory, offset: number): number
-	return buffer_read_f64(source[1], offset)
+local function rt_load_f64(source: Memory, base: number, offset: number): number
+	local index = base + offset
+
+	return buffer_read_f64(source[1], index)
 end
 
 -- SECTION store_i32_into_i8
 -- NEEDS buffer_write_u8
 -- NEEDS memory_type
-local function rt_store_i32_into_i8(destination: Memory, offset: number, source: number)
-	buffer_write_u8(destination[1], offset, source)
+local function rt_store_i32_into_i8(destination: Memory, base: number, offset: number, source: number)
+	local index = base + offset
+
+	buffer_write_u8(destination[1], index, source)
 end
 
 -- SECTION store_i32_into_i16
 -- NEEDS buffer_write_u16
 -- NEEDS memory_type
-local function rt_store_i32_into_i16(destination: Memory, offset: number, source: number)
-	buffer_write_u16(destination[1], offset, source)
+local function rt_store_i32_into_i16(destination: Memory, base: number, offset: number, source: number)
+	local index = base + offset
+
+	buffer_write_u16(destination[1], index, source)
 end
 
 -- SECTION store_i32
 -- NEEDS buffer_write_u32
 -- NEEDS memory_type
-local function rt_store_i32(destination: Memory, offset: number, source: number)
-	buffer_write_u32(destination[1], offset, source)
+local function rt_store_i32(destination: Memory, base: number, offset: number, source: number)
+	local index = base + offset
+
+	buffer_write_u32(destination[1], index, source)
 end
 
 -- SECTION store_i64_into_i8
 -- NEEDS buffer_write_u8
 -- NEEDS from_bits_i64
 -- NEEDS memory_type
-local function rt_store_i64_into_i8(destination: Memory, offset: number, source: number)
+local function rt_store_i64_into_i8(destination: Memory, base: number, offset: number, source: number)
+	local index = base + offset
+
 	local source_1 = from_bits_i64(source)
 
-	buffer_write_u8(destination[1], offset, source_1)
+	buffer_write_u8(destination[1], index, source_1)
 end
 
 -- SECTION store_i64_into_i16
 -- NEEDS buffer_write_u16
 -- NEEDS from_bits_i64
 -- NEEDS memory_type
-local function rt_store_i64_into_i16(destination: Memory, offset: number, source: number)
+local function rt_store_i64_into_i16(destination: Memory, base: number, offset: number, source: number)
+	local index = base + offset
+
 	local source_1 = from_bits_i64(source)
 
-	buffer_write_u16(destination[1], offset, source_1)
+	buffer_write_u16(destination[1], index, source_1)
 end
 
 -- SECTION store_i64_into_i32
 -- NEEDS buffer_write_u32
 -- NEEDS from_bits_i64
 -- NEEDS memory_type
-local function rt_store_i64_into_i32(destination: Memory, offset: number, source: number)
+local function rt_store_i64_into_i32(destination: Memory, base: number, offset: number, source: number)
+	local index = base + offset
+
 	local source_1 = from_bits_i64(source)
 
-	buffer_write_u32(destination[1], offset, source_1)
+	buffer_write_u32(destination[1], index, source_1)
 end
 
 -- SECTION store_i64
 -- NEEDS buffer_write_u32
 -- NEEDS from_bits_i64
 -- NEEDS memory_type
-local function rt_store_i64(destination: Memory, offset: number, source: number)
+local function rt_store_i64(destination: Memory, base: number, offset: number, source: number)
+	local index = base + offset
+
 	local source_1, source_2 = from_bits_i64(source)
 
-	buffer_write_u32(destination[1], offset + 4, source_2)
-	buffer_write_u32(destination[1], offset, source_1)
+	buffer_write_u32(destination[1], index + 4, source_2)
+	buffer_write_u32(destination[1], index, source_1)
 end
 
 -- SECTION store_f32
 -- NEEDS buffer_write_f32
 -- NEEDS memory_type
-local function rt_store_f32(destination: Memory, offset: number, source: number)
-	buffer_write_u32(destination[1], offset, source)
+local function rt_store_f32(destination: Memory, base: number, offset: number, source: number)
+	local index = base + offset
+
+	buffer_write_u32(destination[1], index, source)
 end
 
 -- SECTION store_f64
 -- NEEDS buffer_write_f64
 -- NEEDS memory_type
-local function rt_store_f64(destination: Memory, offset: number, source: number)
-	buffer_write_f64(destination[1], offset, source)
+local function rt_store_f64(destination: Memory, base: number, offset: number, source: number)
+	local index = base + offset
+
+	buffer_write_f64(destination[1], index, source)
 end
 
 -- SECTION memory_size

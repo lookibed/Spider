@@ -398,6 +398,7 @@ impl Print for MemoryStore {
 		let Self {
 			destination,
 			source,
+			offset,
 			..
 		} = self;
 
@@ -408,7 +409,7 @@ impl Print for MemoryStore {
 
 		destination.print(printer, out)?;
 
-		write!(out, ", ")?;
+		write!(out, ", {offset}, ")?;
 
 		source.print(printer, out)?;
 

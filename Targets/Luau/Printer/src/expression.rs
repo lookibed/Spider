@@ -179,6 +179,24 @@ impl Print for Local {
 	}
 }
 
+/// Opens the call that registers a function value's WebAssembly type, if it has one.
+fn print_function_type_open(key: Option<&str>, out: &mut dyn Write) -> Result<()> {
+	if key.is_some() {
+		write!(out, "rt_function_type(")?;
+	}
+
+	Ok(())
+}
+
+/// Closes the call opened by [`print_function_type_open`].
+fn print_function_type_close(key: Option<&str>, out: &mut dyn Write) -> Result<()> {
+	if let Some(key) = key {
+		write!(out, ", \"{key}\")")?;
+	}
+
+	Ok(())
+}
+
 impl Print for Function {
 	fn print(&self, printer: &mut LuauPrinter, out: &mut dyn Write) -> Result<()> {
 		let Self {
@@ -187,7 +205,10 @@ impl Print for Function {
 			stack,
 			code,
 			returns,
+			key,
 		} = self;
+
+		print_function_type_open(key.as_deref(), out)?;
 
 		write!(out, "(function(")?;
 
@@ -216,7 +237,9 @@ impl Print for Function {
 		printer.outdent();
 
 		printer.tab(out)?;
-		write!(out, "end)")
+		write!(out, "end)")?;
+
+		print_function_type_close(key.as_deref(), out)
 	}
 }
 
@@ -715,13 +738,17 @@ impl Print for TableNew {
 
 impl Print for TableGet {
 	fn print(&self, printer: &mut LuauPrinter, out: &mut dyn Write) -> Result<()> {
-		let Self { source } = self;
+		let Self { source, key } = self;
 
 		let intrinsic = self.needs_name();
 
 		write!(out, "rt_{intrinsic}(")?;
 
 		source.print(printer, out)?;
+
+		if let Some(key) = key {
+			write!(out, ", \"{key}\"")?;
+		}
 
 		write!(out, ")")
 	}
@@ -785,7 +812,7 @@ impl Print for MemoryNew {
 
 impl Print for MemoryLoad {
 	fn print(&self, printer: &mut LuauPrinter, out: &mut dyn Write) -> Result<()> {
-		let Self { source, .. } = self;
+		let Self { source, offset, .. } = self;
 
 		let intrinsic = self.needs_name();
 
@@ -793,7 +820,7 @@ impl Print for MemoryLoad {
 
 		source.print(printer, out)?;
 
-		write!(out, ")")
+		write!(out, ", {offset})")
 	}
 }
 
