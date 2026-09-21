@@ -138,6 +138,53 @@ actual_locals = 1 (environment) + 1 (excess_stack) + runtime_names.len()
 - Heuristic: `197 + 0 + 2 = 199 < 200` → **no spill**
 - Actual: `197 + 0 + 3 + 1 = 201 > 200` → **exceeds limit!**
 
+### Resolved: The Runtime Prelude No Longer Uses Chunk Locals
+
+The `wasm3` failure above was reported as `main function has more than 200
+local variables`, which is the **main chunk**, not `module()`. Every runtime
+section used to be printed as a chunk level `local function ...` / `local x =
+...`, so a large module needed one chunk local per helper; `wasm3` reached 208
+of them and `binjgb` was close behind.
+
+**File:** `Targets/LuaNoFFI/Printer/src/library/printer.rs`
+
+Each section is now printed inside its own `do ... end` block and publishes the
+locals it declares in a single chunk level `runtime` table:
+
+```lua
+local runtime = {}
+
+do -- SECTION truncate_f32
+	local from_bits_f32, into_bits_f32, math_modf = runtime.from_bits_f32, runtime.into_bits_f32, runtime.math_modf
+local function rt_truncate_f32(source)
+	-- ...
+end
+	runtime.rt_truncate_f32 = rt_truncate_f32
+end
+
+local function module(environment_0_)
+	local rt_truncate_f32 = runtime.rt_truncate_f32
+	-- ...
+end
+```
+
+The chunk therefore holds `runtime` plus `module` no matter how many sections
+are emitted, while calls between helpers still go through block locals, i.e.
+plain upvalues, rather than table lookups. A block holds its imports plus its
+own declarations; the widest built-in section needs nine (`raw_unsigned_divide_u64`),
+and the printer asserts that no block exceeds 190.
+
+The imports of a block are every name an earlier section declared that the body
+mentions, which is a superset of its `-- NEEDS` list; sections that forgot a
+`-- NEEDS` line (`truncate_f32` → `math_modf`, `saturate_f64_to_s64` →
+`subtract_i64`) used to depend on some other section pulling the dependency in,
+and now resolve on their own.
+
+Code printed after the prelude that refers to a section local by name — the
+conformance harness does this with `environment`, `named` and `selected` — has
+to bind it again through `Printer::print_bindings`, and mutable state shared
+between a section and the chunk has to be a table field or a global.
+
 ### Separate Per-Function Spill (LocalAllocator)
 
 The Builder has its own **per-inner-function** spill mechanism in `Targets/LuaNoFFI/Builder/src/local_allocator/local_provider.rs` (lines 7-9):
@@ -154,7 +201,7 @@ When an inner wasm function exceeds 197 fast locals, the allocator spills them t
 |---|---|---|---|---|
 | `wasm3` (lua-no-ffi) | 90 | 30,800 | 2,368 | `main function has more than 200 local variables` |
 
-The wasm3 module generates 2,368 local variables — far above 200. The spill heuristic should trigger, but because of the undercount bug, it doesn't.
+The wasm3 module generates 2,368 local variables — far above 200. The spill heuristic should trigger, but because of the undercount bug, it doesn't. The load error itself came from the prelude rather than from `module()`, and is resolved by the section scoping above; `wasm3` and `binjgb` now load.
 
 ---
 
@@ -164,6 +211,7 @@ The wasm3 module generates 2,368 local variables — far above 200. The spill he
 |---|---|---|---|---|
 | Upvalues per function | 60 | lua-jit, lua-no-ffi | Packed scoped (threshold 48) | Module wrapper has no packing; threshold leaves 12-slot margin |
 | Locals per function | 200 | lua-no-ffi | `module_locals` table spill | Heuristic undercounts by 3-4 (Bug #2) |
+| Locals in the main chunk | 200 | lua-no-ffi | One `do ... end` block per runtime section, definitions shared through the `runtime` table | None known |
 
 Both limits are architectural — they reflect Spider's strategy of emitting all variables as Lua locals in a single function body. A fundamental rethinking (e.g., splitting the module function into multiple sub-functions, or moving runtime bindings to a separate table) would be needed to fully resolve these limits for arbitrarily large wasm modules.
 

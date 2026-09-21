@@ -76,7 +76,7 @@ This fixture also includes a real file-based smoke test through plain Lua file A
 - writes each decoded RGB frame to a `P6` `.ppm` file
 
 The host adapter script is:
-- [host_main.lua](/D:/Backups/Spider/tests/manual/real-world-plmpeg/host_main.lua:1)
+- [host_main.lua](../../tests/manual/real-world-plmpeg/host_main.lua#L1)
 
 Run it like this:
 
@@ -119,7 +119,7 @@ This path intentionally uses ordinary Lua file APIs only. No `ffi` is required o
 
 For symmetric host-in-the-loop comparisons against `lua-no-ffi`, use:
 
-- [Tools/WasmtimeHostRunner](/D:/Backups/Spider/Tools/WasmtimeHostRunner/src/main.rs:1)
+- [Tools/WasmtimeHostRunner](../../Tools/WasmtimeHostRunner/src/main.rs#L1)
 
 This runner is still intentionally fixture-specific:
 
@@ -150,32 +150,32 @@ Current rough `wasmtime` result on `fixtures/fhd_5s_testsrc2.m1v` with frame wri
 Convert generated `.ppm` frames to `.png` for quick visual inspection:
 
 ```powershell
-ffmpeg -y -i D:\Backups\Spider\tests\manual\real-world-plmpeg\generated\frames\fhd_5s_testsrc2_frame000.ppm D:\Backups\Spider\tests\manual\real-world-plmpeg\generated\frames\fhd_5s_testsrc2_frame000.png
-ffmpeg -y -i D:\Backups\Spider\tests\manual\real-world-plmpeg\generated\frames\fhd_5s_testsrc2_frame007.ppm D:\Backups\Spider\tests\manual\real-world-plmpeg\generated\frames\fhd_5s_testsrc2_frame007.png
+ffmpeg -y -i .\tests\manual\real-world-plmpeg\generated\frames\fhd_5s_testsrc2_frame000.ppm .\tests\manual\real-world-plmpeg\generated\frames\fhd_5s_testsrc2_frame000.png
+ffmpeg -y -i .\tests\manual\real-world-plmpeg\generated\frames\fhd_5s_testsrc2_frame007.ppm .\tests\manual\real-world-plmpeg\generated\frames\fhd_5s_testsrc2_frame007.png
 ```
 
 Build raw MPEG-1 `.m1v` from your own input video:
 
 ```powershell
-ffmpeg -y -i "D:\path\to\your_input.mp4" -vf "scale=1920:1080,fps=25" -t 5 -c:v mpeg1video -q:v 5 -an "D:\Backups\Spider\tests\manual\real-world-plmpeg\fixtures\my_5s_1080p.m1v"
+ffmpeg -y -i "D:\path\to\your_input.mp4" -vf "scale=1920:1080,fps=25" -t 5 -c:v mpeg1video -q:v 5 -an ".\tests\manual\real-world-plmpeg\fixtures\my_5s_1080p.m1v"
 ```
 
 Generate a deterministic test clip without an input file:
 
 ```powershell
-ffmpeg -y -f lavfi -i testsrc2=size=1920x1080:rate=25 -t 5 -c:v mpeg1video -q:v 5 -an "D:\Backups\Spider\tests\manual\real-world-plmpeg\fixtures\my_testsrc_5s.m1v"
+ffmpeg -y -f lavfi -i testsrc2=size=1920x1080:rate=25 -t 5 -c:v mpeg1video -q:v 5 -an ".\tests\manual\real-world-plmpeg\fixtures\my_testsrc_5s.m1v"
 ```
 
 Run the `lua-no-ffi` host decode smoke on your generated `.m1v`:
 
 ```powershell
-luajit D:\Backups\Spider\tests\manual\real-world-plmpeg\host_main.lua lua-no-ffi D:\Backups\Spider\tests\manual\real-world-plmpeg\fixtures\my_5s_1080p.m1v
+luajit .\tests\manual\real-world-plmpeg\host_main.lua lua-no-ffi .\tests\manual\real-world-plmpeg\fixtures\my_5s_1080p.m1v
 ```
 
 Or run the bundled larger sample directly:
 
 ```powershell
-luajit D:\Backups\Spider\tests\manual\real-world-plmpeg\host_main.lua lua-no-ffi D:\Backups\Spider\tests\manual\real-world-plmpeg\fixtures\test.m1v --all-frames 100
+luajit .\tests\manual\real-world-plmpeg\host_main.lua lua-no-ffi .\tests\manual\real-world-plmpeg\fixtures\test.m1v --all-frames 100
 ```
 
 Compare the same `100`-frame Full HD workflow in `wasmtime`:

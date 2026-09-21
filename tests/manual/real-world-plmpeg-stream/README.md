@@ -72,7 +72,7 @@ luajit tests/manual/real-world-plmpeg-stream/main.lua lua-jit 8
 ## External Host Adapter Visual Test
 
 This fixture keeps the baseline `host_main.lua` and adds a stream-oriented runner:
-- [host_stream_main.lua](/D:/Backups/Spider/tests/manual/real-world-plmpeg-stream/host_stream_main.lua:1)
+- [host_stream_main.lua](../../tests/manual/real-world-plmpeg-stream/host_stream_main.lua#L1)
 
 This fixture also includes a real file-based smoke test through plain Lua file APIs:
 - reads a real raw `.m1v` file from disk with `io.open(..., "rb")`
@@ -82,7 +82,7 @@ This fixture also includes a real file-based smoke test through plain Lua file A
 - writes each decoded RGB frame to a `P6` `.ppm` file
 
 The host adapter script is:
-- [host_main.lua](/D:/Backups/Spider/tests/manual/real-world-plmpeg-stream/host_main.lua:1)
+- [host_main.lua](../../tests/manual/real-world-plmpeg-stream/host_main.lua#L1)
 
 Run it like this:
 
@@ -152,7 +152,7 @@ This path intentionally uses ordinary Lua file APIs only. No `ffi` is required o
 
 The same stream workflow can now be measured under `wasmtime` too:
 
-- [Tools/WasmtimeHostRunner](/D:/Backups/Spider/Tools/WasmtimeHostRunner/src/main.rs:1)
+- [Tools/WasmtimeHostRunner](../../Tools/WasmtimeHostRunner/src/main.rs#L1)
 
 This runner is still intentionally fixture-specific:
 
@@ -181,32 +181,32 @@ Current rough `wasmtime` result on `fixtures/fhd_5s_testsrc2.m1v` with frame wri
 Convert generated `.ppm` frames to `.png` for quick visual inspection:
 
 ```powershell
-ffmpeg -y -i D:\Backups\Spider\tests\manual\real-world-plmpeg-stream\generated\frames\fhd_5s_testsrc2_stream_frame000.ppm D:\Backups\Spider\tests\manual\real-world-plmpeg-stream\generated\frames\fhd_5s_testsrc2_stream_frame000.png
-ffmpeg -y -i D:\Backups\Spider\tests\manual\real-world-plmpeg-stream\generated\frames\fhd_5s_testsrc2_stream_frame007.ppm D:\Backups\Spider\tests\manual\real-world-plmpeg-stream\generated\frames\fhd_5s_testsrc2_stream_frame007.png
+ffmpeg -y -i .\tests\manual\real-world-plmpeg-stream\generated\frames\fhd_5s_testsrc2_stream_frame000.ppm .\tests\manual\real-world-plmpeg-stream\generated\frames\fhd_5s_testsrc2_stream_frame000.png
+ffmpeg -y -i .\tests\manual\real-world-plmpeg-stream\generated\frames\fhd_5s_testsrc2_stream_frame007.ppm .\tests\manual\real-world-plmpeg-stream\generated\frames\fhd_5s_testsrc2_stream_frame007.png
 ```
 
 Build raw MPEG-1 `.m1v` from your own input video:
 
 ```powershell
-ffmpeg -y -i "D:\path\to\your_input.mp4" -vf "scale=1920:1080,fps=25" -t 5 -c:v mpeg1video -q:v 5 -an "D:\Backups\Spider\tests\manual\real-world-plmpeg-stream\fixtures\my_5s_1080p.m1v"
+ffmpeg -y -i "D:\path\to\your_input.mp4" -vf "scale=1920:1080,fps=25" -t 5 -c:v mpeg1video -q:v 5 -an ".\tests\manual\real-world-plmpeg-stream\fixtures\my_5s_1080p.m1v"
 ```
 
 Generate a deterministic test clip without an input file:
 
 ```powershell
-ffmpeg -y -f lavfi -i testsrc2=size=1920x1080:rate=25 -t 5 -c:v mpeg1video -q:v 5 -an "D:\Backups\Spider\tests\manual\real-world-plmpeg-stream\fixtures\my_testsrc_5s.m1v"
+ffmpeg -y -f lavfi -i testsrc2=size=1920x1080:rate=25 -t 5 -c:v mpeg1video -q:v 5 -an ".\tests\manual\real-world-plmpeg-stream\fixtures\my_testsrc_5s.m1v"
 ```
 
 Run the `lua-no-ffi` host decode smoke on your generated `.m1v`:
 
 ```powershell
-luajit D:\Backups\Spider\tests\manual\real-world-plmpeg-stream\host_main.lua lua-no-ffi D:\Backups\Spider\tests\manual\real-world-plmpeg-stream\fixtures\my_5s_1080p.m1v
+luajit .\tests\manual\real-world-plmpeg-stream\host_main.lua lua-no-ffi .\tests\manual\real-world-plmpeg-stream\fixtures\my_5s_1080p.m1v
 ```
 
 And the stream runner on the bundled larger sample:
 
 ```powershell
-luajit D:\Backups\Spider\tests\manual\real-world-plmpeg-stream\host_stream_main.lua lua-no-ffi D:\Backups\Spider\tests\manual\real-world-plmpeg-stream\fixtures\test.m1v 100
+luajit .\tests\manual\real-world-plmpeg-stream\host_stream_main.lua lua-no-ffi .\tests\manual\real-world-plmpeg-stream\fixtures\test.m1v 100
 ```
 
 ## Current Result

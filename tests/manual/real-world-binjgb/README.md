@@ -85,7 +85,7 @@ luajit tests/manual/real-world-binjgb/main.lua lua-no-ffi 16
 
 For a symmetric host-in-the-loop comparison against the Lua host script, use:
 
-- [Tools/WasmtimeHostRunner](/D:/Backups/Spider/Tools/WasmtimeHostRunner/src/main.rs:1)
+- [Tools/WasmtimeHostRunner](../../Tools/WasmtimeHostRunner/src/main.rs#L1)
 
 ```powershell
 target\release\wasmtime-host-runner.exe --fixture gbc --mode baseline --wasm tests\manual\real-world-binjgb\generated\binjgb.wasm --input tests\manual\real-world-binjgb\fixtures\cgb-acid2.gbc --frames 16 --output-dir tests\manual\real-world-binjgb\generated\frames_wasmtime
@@ -173,8 +173,8 @@ Default smoke outputs:
 Convert generated `.ppm` frames to `.png` for quick visual inspection:
 
 ```powershell
-ffmpeg -y -i D:\Backups\Spider\tests\manual\real-world-binjgb\generated\frames\cgb-acid2_frame000.ppm D:\Backups\Spider\tests\manual\real-world-binjgb\generated\frames\cgb-acid2_frame000.png
-ffmpeg -y -i D:\Backups\Spider\tests\manual\real-world-binjgb\generated\frames\cgb-acid2_frame015.ppm D:\Backups\Spider\tests\manual\real-world-binjgb\generated\frames\cgb-acid2_frame015.png
+ffmpeg -y -i .\tests\manual\real-world-binjgb\generated\frames\cgb-acid2_frame000.ppm .\tests\manual\real-world-binjgb\generated\frames\cgb-acid2_frame000.png
+ffmpeg -y -i .\tests\manual\real-world-binjgb\generated\frames\cgb-acid2_frame015.ppm .\tests\manual\real-world-binjgb\generated\frames\cgb-acid2_frame015.png
 ```
 
 ## External `Tetris` Smoke

@@ -2,7 +2,7 @@
 
 This note captures the current unfinished work around:
 
-- [tests/manual/real-world-plmpeg](/D:/Backups/Spider/tests/manual/real-world-plmpeg/README.md)
+- [tests/manual/real-world-plmpeg](../../tests/manual/real-world-plmpeg/README.md)
 
 ## Current Goal
 
@@ -63,7 +63,7 @@ This is currently considered more likely than:
 The current practical reproduction shape is:
 
 1. Generate `1280x720` and `1920x1080` raw MPEG-1 samples (8 frames)
-2. Run [host_main.lua](/D:/Backups/Spider/tests/manual/real-world-plmpeg/host_main.lua:1)
+2. Run [host_main.lua](../../tests/manual/real-world-plmpeg/host_main.lua#L1)
 3. Observe frame 0 decode succeeds on both
 4. Observe frame 7 can fail on generated streams while canonical sample frame 7 succeeds
 
@@ -94,8 +94,8 @@ The practical host smoke workflow is now resilient: it tries frame `7` and falls
 
 A newer comparison fixture also exists now:
 
-- [tests/manual/real-world-plmpeg-stream](/D:/Backups/Spider/tests/manual/real-world-plmpeg-stream/README.md)
-- [Tools/WasmtimeHostRunner](/D:/Backups/Spider/Tools/WasmtimeHostRunner/src/main.rs:1)
+- [tests/manual/real-world-plmpeg-stream](../../tests/manual/real-world-plmpeg-stream/README.md)
+- [Tools/WasmtimeHostRunner](../../Tools/WasmtimeHostRunner/src/main.rs#L1)
 
 That stream-oriented branch does not close every `pl_mpeg` question, but it does show that sequential host extraction can already reach `100` frames on `fixtures/fhd_5s_testsrc2.m1v`. The baseline `--all-frames` host path also reaches `100` now after host reset was added, but it remains significantly slower for large frame counts because it still re-decodes each requested frame from stream start.
 

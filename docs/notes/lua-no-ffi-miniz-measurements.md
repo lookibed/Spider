@@ -10,10 +10,10 @@ The goal is not microbenchmark precision. These numbers are meant to answer a pr
 
 The measurements below cover:
 
-- [tests/manual/real-world-miniz](/D:/Backups/Spider/tests/manual/real-world-miniz/README.md)
-- [tests/manual/real-world-miniz-full](/D:/Backups/Spider/tests/manual/real-world-miniz-full/README.md)
-- [tests/manual/real-world-miniz-file](/D:/Backups/Spider/tests/manual/real-world-miniz-file/README.md)
-- [tests/manual/real-archive-secret](/D:/Backups/Spider/tests/manual/real-archive-secret/README.md)
+- [tests/manual/real-world-miniz](../../tests/manual/real-world-miniz/README.md)
+- [tests/manual/real-world-miniz-full](../../tests/manual/real-world-miniz-full/README.md)
+- [tests/manual/real-world-miniz-file](../../tests/manual/real-world-miniz-file/README.md)
+- [tests/manual/real-archive-secret](../../tests/manual/real-archive-secret/README.md)
 
 The first three are the most apples-to-apples for `wasmtime` vs `lua-no-ffi`.
 

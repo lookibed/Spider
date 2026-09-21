@@ -21,7 +21,7 @@ Targets compared:
 
 The fixture lives under:
 
-- [tests/manual/chipmunk-profile/README.md](/D:/Backups/Spider/tests/manual/chipmunk-profile/README.md)
+- [tests/manual/chipmunk-profile/README.md](../../tests/manual/chipmunk-profile/README.md)
 
 Single-export benchmark modules were used for the timing runs. That matters because one earlier combined profiling module exceeded the `lua-jit` target's loadable-size/upvalue limits, which would have polluted the comparison with a structural codegen limit instead of a runtime cost.
 

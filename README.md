@@ -106,6 +106,19 @@ Spider/
 └── tests/manual/           # Real-world manual fixtures
 ```
 
+## Build and test
+
+The toolchain is pinned by `rust-toolchain.toml` (stable). Conformance tests
+need `luajit` on `PATH` and the `Conformance/Suite` submodule:
+
+```bash
+git submodule update --init Conformance/Suite
+cargo build --release
+cargo test --workspace --exclude conformance
+cargo test -p conformance --test luajit      # lua-jit target, 312/312
+cargo test -p conformance --test luanoffi    # lua-no-ffi target, 280/312 (NaN payload cases)
+```
+
 ## Build
 
 ```bash

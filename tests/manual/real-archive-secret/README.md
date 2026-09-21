@@ -2,7 +2,7 @@
 
 This fixture uses a real ZIP file on disk:
 
-- [secretik.zip](/D:/Backups/Spider/tests/manual/real-archive-secret/fixtures/secretik.zip)
+- [secretik.zip](../../tests/manual/real-archive-secret/fixtures/secretik.zip)
 
 Inside it there is one file:
 

@@ -87,7 +87,7 @@ This fixture also includes a real file-based smoke test through plain Lua file A
 - writes each decoded frame as a `P6` `.ppm` file
 
 The host adapter script is:
-- [host_main.lua](/D:/Backups/Spider/tests/manual/real-world-h264bsd-mp4/host_main.lua:1)
+- [host_main.lua](../../tests/manual/real-world-h264bsd-mp4/host_main.lua#L1)
 
 Run it like this:
 
@@ -139,7 +139,7 @@ The new `--all-frames [max]` mode is a sequential manual runner:
 
 For a symmetric host-in-the-loop comparison against the Lua host script, use:
 
-- [Tools/WasmtimeHostRunner](/D:/Backups/Spider/Tools/WasmtimeHostRunner/src/main.rs:1)
+- [Tools/WasmtimeHostRunner](../../Tools/WasmtimeHostRunner/src/main.rs#L1)
 
 The runner now supports this fixture through the explicit `h264mp4` fixture flag:
 
@@ -164,20 +164,20 @@ This runner is still fixture-specific rather than universal:
 Convert generated `.ppm` frames to `.png` for quick visual inspection:
 
 ```powershell
-ffmpeg -y -i D:\Backups\Spider\tests\manual\real-world-h264bsd-mp4\generated\frames\sample_frame000.ppm D:\Backups\Spider\tests\manual\real-world-h264bsd-mp4\generated\frames\sample_frame000.png
-ffmpeg -y -i D:\Backups\Spider\tests\manual\real-world-h264bsd-mp4\generated\frames\sample_frame007.ppm D:\Backups\Spider\tests\manual\real-world-h264bsd-mp4\generated\frames\sample_frame007.png
+ffmpeg -y -i .\tests\manual\real-world-h264bsd-mp4\generated\frames\sample_frame000.ppm .\tests\manual\real-world-h264bsd-mp4\generated\frames\sample_frame000.png
+ffmpeg -y -i .\tests\manual\real-world-h264bsd-mp4\generated\frames\sample_frame007.ppm .\tests\manual\real-world-h264bsd-mp4\generated\frames\sample_frame007.png
 ```
 
 Generate another small baseline-profile sample:
 
 ```powershell
-ffmpeg -y -f lavfi -i testsrc2=size=96x64:rate=12 -frames:v 12 -c:v libx264 -profile:v baseline -pix_fmt yuv420p -bf 0 -an D:\Backups\Spider\tests\manual\real-world-h264bsd-mp4\fixtures\my_sample.mp4
+ffmpeg -y -f lavfi -i testsrc2=size=96x64:rate=12 -frames:v 12 -c:v libx264 -profile:v baseline -pix_fmt yuv420p -bf 0 -an .\tests\manual\real-world-h264bsd-mp4\fixtures\my_sample.mp4
 ```
 
 Run the host smoke directly on your own `.mp4`:
 
 ```powershell
-luajit D:\Backups\Spider\tests\manual\real-world-h264bsd-mp4\host_main.lua lua-no-ffi D:\path\to\your_video.mp4
+luajit .\tests\manual\real-world-h264bsd-mp4\host_main.lua lua-no-ffi D:\path\to\your_video.mp4
 ```
 
 If your source video is a more modern H.264 variant, first re-encode it into the constrained baseline-friendly shape that this v1 fixture expects:
@@ -189,7 +189,7 @@ ffmpeg -y -i "video_in.mp4" -an -c:v libx264 -profile:v baseline -pix_fmt yuv420
 Then run the fixture on the converted file:
 
 ```powershell
-luajit D:\Backups\Spider\tests\manual\real-world-h264bsd-mp4\host_main.lua lua-no-ffi D:\Backups\Spider\tests\manual\real-world-h264bsd-mp4\fixtures\your_video_baseline.mp4
+luajit .\tests\manual\real-world-h264bsd-mp4\host_main.lua lua-no-ffi .\tests\manual\real-world-h264bsd-mp4\fixtures\your_video_baseline.mp4
 ```
 
 ## Current Result

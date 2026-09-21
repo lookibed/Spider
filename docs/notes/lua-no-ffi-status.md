@@ -2,37 +2,49 @@
 
 This note summarizes the current readiness of Spider's `lua-no-ffi` target as of the latest manual validation work under:
 
-- [tests/manual/hash-compare](/D:/Backups/Spider/tests/manual/hash-compare/README.md)
-- [tests/manual/float-compare](/D:/Backups/Spider/tests/manual/float-compare/README.md)
-- [tests/manual/i64-compare](/D:/Backups/Spider/tests/manual/i64-compare/README.md)
-- [tests/manual/real-world-tinyexpr](/D:/Backups/Spider/tests/manual/real-world-tinyexpr/README.md)
-- [tests/manual/real-world-miniz](/D:/Backups/Spider/tests/manual/real-world-miniz/README.md)
-- [tests/manual/real-world-miniz-full](/D:/Backups/Spider/tests/manual/real-world-miniz-full/README.md)
-- [tests/manual/real-world-miniz-file](/D:/Backups/Spider/tests/manual/real-world-miniz-file/README.md)
-- [tests/manual/real-archive-secret](/D:/Backups/Spider/tests/manual/real-archive-secret/README.md)
-- [tests/manual/real-world-chipmunk](/D:/Backups/Spider/tests/manual/real-world-chipmunk/README.md)
-- [tests/manual/real-world-lodepng](/D:/Backups/Spider/tests/manual/real-world-lodepng/README.md)
-- [tests/manual/real-world-libjpeg-turbo](/D:/Backups/Spider/tests/manual/real-world-libjpeg-turbo/README.md)
-- [tests/manual/real-world-libjpeg-turbo-mjpeg](/D:/Backups/Spider/tests/manual/real-world-libjpeg-turbo-mjpeg/README.md)
-- [tests/manual/real-world-binjgb](/D:/Backups/Spider/tests/manual/real-world-binjgb/README.md)
-- [tests/manual/real-world-h264bsd-mp4](/D:/Backups/Spider/tests/manual/real-world-h264bsd-mp4/README.md)
-- [tests/manual/real-world-plmpeg](/D:/Backups/Spider/tests/manual/real-world-plmpeg/README.md)
-- [tests/manual/real-world-plmpeg-stream](/D:/Backups/Spider/tests/manual/real-world-plmpeg-stream/README.md)
+- [tests/manual/hash-compare](../../tests/manual/hash-compare/README.md)
+- [tests/manual/float-compare](../../tests/manual/float-compare/README.md)
+- [tests/manual/i64-compare](../../tests/manual/i64-compare/README.md)
+- [tests/manual/real-world-tinyexpr](../../tests/manual/real-world-tinyexpr/README.md)
+- [tests/manual/real-world-miniz](../../tests/manual/real-world-miniz/README.md)
+- [tests/manual/real-world-miniz-full](../../tests/manual/real-world-miniz-full/README.md)
+- [tests/manual/real-world-miniz-file](../../tests/manual/real-world-miniz-file/README.md)
+- [tests/manual/real-archive-secret](../../tests/manual/real-archive-secret/README.md)
+- [tests/manual/real-world-chipmunk](../../tests/manual/real-world-chipmunk/README.md)
+- [tests/manual/real-world-lodepng](../../tests/manual/real-world-lodepng/README.md)
+- [tests/manual/real-world-libjpeg-turbo](../../tests/manual/real-world-libjpeg-turbo/README.md)
+- [tests/manual/real-world-libjpeg-turbo-mjpeg](../../tests/manual/real-world-libjpeg-turbo-mjpeg/README.md)
+- [tests/manual/real-world-binjgb](../../tests/manual/real-world-binjgb/README.md)
+- [tests/manual/real-world-h264bsd-mp4](../../tests/manual/real-world-h264bsd-mp4/README.md)
+- [tests/manual/real-world-plmpeg](../../tests/manual/real-world-plmpeg/README.md)
+- [tests/manual/real-world-plmpeg-stream](../../tests/manual/real-world-plmpeg-stream/README.md)
 
 Related measurement note:
 
-- [docs/notes/lua-no-ffi-measurements.md](/D:/Backups/Spider/docs/notes/lua-no-ffi-measurements.md)
-- [docs/notes/lua-no-ffi-chipmunk-profile.md](/D:/Backups/Spider/docs/notes/lua-no-ffi-chipmunk-profile.md)
-- [docs/notes/lua-no-ffi-known-bugs.md](/D:/Backups/Spider/docs/notes/lua-no-ffi-known-bugs.md)
-- [docs/notes/lua-no-ffi-plmpeg-open-problem.md](/D:/Backups/Spider/docs/notes/lua-no-ffi-plmpeg-open-problem.md)
+- [docs/notes/lua-no-ffi-measurements.md](../../docs/notes/lua-no-ffi-measurements.md)
+- [docs/notes/lua-no-ffi-chipmunk-profile.md](../../docs/notes/lua-no-ffi-chipmunk-profile.md)
+- [docs/notes/lua-no-ffi-known-bugs.md](../../docs/notes/lua-no-ffi-known-bugs.md)
+- [docs/notes/lua-no-ffi-plmpeg-open-problem.md](../../docs/notes/lua-no-ffi-plmpeg-open-problem.md)
 
 ## Overall Readiness
 
-Current status: `usable experimental`
+Current status: `usable experimental`, now backed by the WebAssembly spec
+conformance suite instead of manual comparison alone.
 
-This target is no longer a dead prototype. It can generate and run pure LuaJIT 2.1 code without FFI, and it now matches `wasmtime` on the manual integer, float, and `i64` comparison fixtures that were added during stabilization.
+Conformance (`cargo test -p conformance --test luanoffi`, 78 spec `.wast`
+files x 4 LuaJIT variants, run on Linux with LuaJIT 2.1.0-beta3):
 
-At the same time, it is still not safe to treat as a "compile arbitrary wasm and expect full parity" backend. The runtime contract is much healthier than before, but semantic confidence still comes from targeted manual comparison rather than broad conformance coverage.
+- `lua-no-ffi`: 280 / 312 cases pass. Every remaining failure is a NaN
+  sign or payload assertion (`address`, `conversions`, `f64_bitwise`,
+  `float_exprs`, `float_literals`, `float_memory`, `float_misc`, `select`):
+  `f64` is a native Lua number and LuaJIT cannot observe a NaN's sign or
+  payload without FFI, so those bits are unrecoverable by design.
+- `lua-jit` (the FFI target, same suite via `--test luajit`): 312 / 312.
+
+Real-world parity against `wasmtime` 24.0.1: `tinyexpr`, `miniz` and
+`lodepng` (both variants, all five probes) match bit-for-bit. Every fixture
+`.wasm` in `tests/manual` compiles and loads under LuaJIT except
+`real-world-gltf-rs` (a generated function still exceeds 60 upvalues).
 
 Suggested readiness score:
 
@@ -67,7 +79,7 @@ Representative points from the current measurement set:
 
 Full measurement details live in:
 
-- [docs/notes/lua-no-ffi-measurements.md](/D:/Backups/Spider/docs/notes/lua-no-ffi-measurements.md)
+- [docs/notes/lua-no-ffi-measurements.md](../../docs/notes/lua-no-ffi-measurements.md)
 
 ## What Is Confirmed Working
 
@@ -195,7 +207,7 @@ The biggest remaining risks are:
 - `Tools/WasmtimeHostRunner` now confirms the same shape on `wasmtime`: the stream branch is still much faster than baseline on the same `100`-frame Full HD workflow, which points to an algorithmic difference more than a Lua-only runtime problem
 - A remaining false CRC failure in the direct `miniz` non-wrapping `extract_to_mem/extract_to_heap` path on at least one external ZIP, even though the decompressed bytes are correct and the iterative extract path matches
 - Large modules can still expose structural generator/runtime limits, though `lua-no-ffi` now handles at least one such case by spilling oversized top-level local sets into a table-backed representation
-- Two concrete uncommitted bugs are now tracked separately in [docs/notes/lua-no-ffi-known-bugs.md](/D:/Backups/Spider/docs/notes/lua-no-ffi-known-bugs.md): reference-local default initialization and a near-threshold undercount in the LuaJIT local spill heuristic
+- Two concrete uncommitted bugs are now tracked separately in [docs/notes/lua-no-ffi-known-bugs.md](../../docs/notes/lua-no-ffi-known-bugs.md): reference-local default initialization and a near-threshold undercount in the LuaJIT local spill heuristic
 
 ## Recommended Usage
 

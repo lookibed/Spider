@@ -70,6 +70,6 @@ iterations=512 => mix matches, div matches
 
 Root cause that was fixed:
 
-- `rt_less_than_s64` in [Targets/LuaNoFFI/Printer/runtime/core/i64.lua](/D:/Backups/Spider/Targets/LuaNoFFI/Printer/runtime/core/i64.lua:474) used the `hi ^ 0x80000000` trick and then compared the result as a signed Lua number.
+- `rt_less_than_s64` in [Targets/LuaNoFFI/Printer/runtime/core/i64.lua](../../Targets/LuaNoFFI/Printer/runtime/core/i64.lua#L474) used the `hi ^ 0x80000000` trick and then compared the result as a signed Lua number.
 - In LuaJIT's `bit` library, `bit.bxor` returns a signed 32-bit number, so negative `i64` values could compare incorrectly against zero.
 - That flipped the `if (signed_state < 0)` branch inside `hash_i64_div`, which corrupted the hash even though the underlying `i64 div/rem` arithmetic was already correct.

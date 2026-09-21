@@ -101,13 +101,13 @@ luajit tests/manual/real-world-libjpeg-turbo-mjpeg/host_main.lua lua-no-ffi D:\p
 If your source is a normal video file like `.mp4`, `.mov`, or `.avi`, first convert it to an MJPEG elementary stream:
 
 ```powershell
-ffmpeg -y -i "D:\path\to\your_input.mp4" -vf "fps=12,scale=960:540" -t 5 -c:v mjpeg -q:v 4 -an -f mjpeg "D:\Backups\Spider\tests\manual\real-world-libjpeg-turbo-mjpeg\fixtures\your_video.mjpg"
+ffmpeg -y -i "D:\path\to\your_input.mp4" -vf "fps=12,scale=960:540" -t 5 -c:v mjpeg -q:v 4 -an -f mjpeg ".\tests\manual\real-world-libjpeg-turbo-mjpeg\fixtures\your_video.mjpg"
 ```
 
 Then run it:
 
 ```powershell
-luajit tests/manual/real-world-libjpeg-turbo-mjpeg/host_main.lua lua-no-ffi D:\Backups\Spider\tests\manual\real-world-libjpeg-turbo-mjpeg\fixtures\your_video.mjpg
+luajit tests/manual/real-world-libjpeg-turbo-mjpeg/host_main.lua lua-no-ffi .\tests\manual\real-world-libjpeg-turbo-mjpeg\fixtures\your_video.mjpg
 ```
 
 The decoded frames are written under:
@@ -117,5 +117,5 @@ The decoded frames are written under:
 To view a decoded frame in a regular image viewer, convert `PPM` to `PNG`:
 
 ```powershell
-ffmpeg -y -i D:\Backups\Spider\tests\manual\real-world-libjpeg-turbo-mjpeg\generated\frames\your_video_frame000.ppm D:\Backups\Spider\tests\manual\real-world-libjpeg-turbo-mjpeg\generated\frames\your_video_frame000.png
+ffmpeg -y -i .\tests\manual\real-world-libjpeg-turbo-mjpeg\generated\frames\your_video_frame000.ppm .\tests\manual\real-world-libjpeg-turbo-mjpeg\generated\frames\your_video_frame000.png
 ```

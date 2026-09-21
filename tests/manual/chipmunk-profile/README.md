@@ -58,5 +58,5 @@ These defaults are chosen to keep all three targets runnable while still showing
 
 ## Notes
 
-- The all-in-one profiling wasm is useful for parity and convenience, but the timing comparison in [lua-no-ffi-chipmunk-profile.md](/D:/Backups/Spider/docs/notes/lua-no-ffi-chipmunk-profile.md) was taken from single-export benchmark modules.
+- The all-in-one profiling wasm is useful for parity and convenience, but the timing comparison in [lua-no-ffi-chipmunk-profile.md](../../docs/notes/lua-no-ffi-chipmunk-profile.md) was taken from single-export benchmark modules.
 - That was necessary because an earlier combined profiling module exceeded the current `lua-jit` target's structural load limits, which would have blurred runtime cost with code-shape limits.

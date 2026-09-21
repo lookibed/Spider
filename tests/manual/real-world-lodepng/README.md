@@ -62,11 +62,11 @@ This fixture also includes a real file-based smoke test through a thin host adap
 - verifies that the decoded roundtrip pixels still match the original decoded pixels
 
 The host adapter script is:
-- [host_main.lua](/D:/Backups/Spider/tests/manual/real-world-lodepng/host_main.lua:1)
-- [grayscale_main.lua](/D:/Backups/Spider/tests/manual/real-world-lodepng/grayscale_main.lua:1)
+- [host_main.lua](../../tests/manual/real-world-lodepng/host_main.lua#L1)
+- [grayscale_main.lua](../../tests/manual/real-world-lodepng/grayscale_main.lua#L1)
 
 The default real input image is:
-- [host_input.png](/D:/Backups/Spider/tests/manual/real-world-lodepng/fixtures/host_input.png)
+- [host_input.png](../../tests/manual/real-world-lodepng/fixtures/host_input.png)
 
 Run it like this:
 
@@ -151,16 +151,16 @@ Confirmed `wasmtime` outputs:
 
 Current `lua-no-ffi` status:
 
-- `variant = 0` matches `wasmtime` on `Roundtrip`, `EncodedSize`, `DecodeHash`, and `InputHash`
-- `variant = 0` differs on `PngHash`, which means the encoder can emit different PNG bytes while still decoding back to the same pixels
-- `variant = 1` does not currently match `wasmtime`
-  - `Roundtrip = -998874351`
-  - `EncodedSize = 6520`
-  - `DecodeHash = 496467525`
-  - `InputHash = 496461629`
-  - `PngHash = -530733477`
+- `variant = 0` and `variant = 1` match `wasmtime` on every probe:
+  `Roundtrip`, `EncodedSize`, `DecodeHash`, `InputHash` and `PngHash`
+- verified with `wasmtime` 24.0.1 on Linux against freshly generated output
 
-That means the current `LodePNG` regression starts after raw image generation and inside the encoder path, not in the deterministic input image builder.
+The earlier encoder divergence (`variant = 1` produced `Roundtrip = -998874351`,
+`EncodedSize = 6520`, `DecodeHash = 496467525`, `PngHash = -530733477`) was
+caused by runtime bugs that are fixed now: the boolean-to-integer precedence
+bug in the printer, `f32` rounding and demotion errors, and out-of-bounds and
+partial-write bugs in the memory buffer. See
+[docs/notes/lua-no-ffi-known-bugs.md](../../docs/notes/lua-no-ffi-known-bugs.md).
 
 At the same time, the separate plain-Lua host adapter path is currently green for practical manual use:
 
