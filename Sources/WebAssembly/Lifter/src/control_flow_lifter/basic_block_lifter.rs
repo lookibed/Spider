@@ -110,7 +110,13 @@ impl BasicBlockLifter {
 		let count = usize::from(size).saturating_sub(self.locals.len());
 
 		self.locals.extend(core::iter::repeat_n(null, count));
-		self.locals[..LOCAL_BASE].fill(null);
+
+		// The scratch slots hold dispatcher indices, which are compared against
+		// and added to as integers, so they are seeded with an integer instead
+		// of a reference.
+		let zero = Node::add_i32_into(graph, 0);
+
+		self.locals[..LOCAL_BASE].fill(zero);
 	}
 
 	pub fn get_active_bindings(&self, locals: &[u16]) -> Vec<Link> {

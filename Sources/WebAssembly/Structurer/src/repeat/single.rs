@@ -144,7 +144,13 @@ impl Single {
 			{
 				let mut edges = graph.successors(repetition);
 
-				if edges.next().is_some() && edges.next().is_some() && edges.next().is_none() {
+				// The latch must already branch to the exit before the entry,
+				// since that is the polarity `set_new_latch` writes and the
+				// repetition is reused as is.
+				if edges.next() == Some(exit)
+					&& edges.next() == Some(entry)
+					&& edges.next().is_none()
+				{
 					return Some(repetition);
 				}
 			}
@@ -181,7 +187,18 @@ impl Single {
 			let assignment = graph.add_assignment(Name::B, 1);
 
 			graph.replace_edge(entry, selection, assignment);
-			graph.add_edge(assignment, latch);
+
+			if self.entries.len() == 1 {
+				// The exit index is dead on a back edge, so it is overwritten
+				// with a value no exit ever uses. A multi-entry loop instead
+				// shares `Name::C` with the entry selection, which must survive.
+				let dead = graph.add_assignment(Name::C, u16::MAX);
+
+				graph.add_edge(assignment, dead);
+				graph.add_edge(dead, latch);
+			} else {
+				graph.add_edge(assignment, latch);
+			}
 		}
 	}
 

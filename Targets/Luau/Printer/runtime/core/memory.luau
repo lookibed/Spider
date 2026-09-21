@@ -258,7 +258,7 @@ local function rt_store_i64(destination: Memory, base: number, offset: number, s
 end
 
 -- SECTION store_f32
--- NEEDS buffer_write_f32
+-- NEEDS buffer_write_u32
 -- NEEDS memory_type
 local function rt_store_f32(destination: Memory, base: number, offset: number, source: number)
 	local index = base + offset

@@ -53,7 +53,7 @@ local function rt_table_grow(destination, source, size)
 		return -1
 	end
 
-	for offset = old, new do
+	for offset = old, new - 1 do
 		destination[offset] = source
 	end
 

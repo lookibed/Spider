@@ -13,3 +13,6 @@ web-assembly-structurer = { path = "../Structurer" }
 list.workspace = true
 set.workspace = true
 wasmparser.workspace = true
+
+[dev-dependencies]
+wast = "222.0.0"

@@ -60,10 +60,15 @@ impl StackBuilder {
 		let parameters = types.get_parameter_count(block_type).try_into().unwrap();
 		let results = types.get_result_count(block_type).try_into().unwrap();
 
+		// The stack is polymorphic in unreachable code, so the depth may run
+		// past its base; the wrapping keeps it consistent with the local pushes
+		// and pulls instead of panicking on dead code.
+		let base = self.top.wrapping_sub(parameters);
+
 		self.levels.push(Level {
 			parameters,
 			results,
-			base: self.top - parameters,
+			base,
 
 			destination,
 			jumps: Resizable::new(),
@@ -73,7 +78,7 @@ impl StackBuilder {
 	pub fn pull_level(&mut self) -> Level {
 		let level @ Level { base, results, .. } = self.levels.pop().unwrap();
 
-		self.top = base + results;
+		self.top = base.wrapping_add(results);
 
 		level
 	}
