@@ -233,6 +233,7 @@ impl CodeHandler {
 			MemoryStore {
 				destination,
 				source,
+				offset: node.offset,
 				kind: node.kind,
 			}
 			.into(),

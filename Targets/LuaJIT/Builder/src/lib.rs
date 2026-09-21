@@ -70,6 +70,7 @@ impl LuaJITBuilder {
 		let lambda_in @ LambdaIn {
 			dependencies,
 			output,
+			key,
 			..
 		} = graph.get(*input).as_lambda_in().unwrap();
 
@@ -91,8 +92,15 @@ impl LuaJITBuilder {
 		let code = self.code_handler.pop_scope();
 		let returns = self.data_handler.load_all(results);
 
-		let function =
-			DataHandler::load_scoped(dependencies, arguments, locals, stack, code, returns);
+		let function = DataHandler::load_scoped(
+			dependencies,
+			arguments,
+			locals,
+			stack,
+			code,
+			returns,
+			key.clone(),
+		);
 
 		self.do_assignment(*output, function);
 	}
@@ -367,7 +375,7 @@ impl LuaJITBuilder {
 		self.do_assignment(id, expression);
 	}
 
-	fn handle_table_get(&mut self, id: u32, node: TableGet) {
+	fn handle_table_get(&mut self, id: u32, node: &TableGet) {
 		let expression = self.data_handler.load_table_get(node);
 
 		self.do_assignment(id, expression);
@@ -596,7 +604,7 @@ impl LuaJITBuilder {
 			Node::GlobalGet(node) => self.handle_global_get(id, node),
 			Node::GlobalSet(node) => self.handle_global_set(id, node),
 			Node::TableNew(ref node) => self.handle_table_new(id, node),
-			Node::TableGet(node) => self.handle_table_get(id, node),
+			Node::TableGet(ref node) => self.handle_table_get(id, node),
 			Node::TableSet(node) => self.handle_table_set(id, node),
 			Node::TableSize(node) => self.handle_table_size(id, node),
 			Node::TableGrow(node) => self.handle_table_grow(id, node),

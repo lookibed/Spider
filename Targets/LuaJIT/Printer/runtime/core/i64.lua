@@ -341,22 +341,85 @@ local function rt_extend_s32_to_i64(source)
 	return source
 end
 
--- SECTION convert_s64_to_f32
--- NEEDS transmute_n32
-local function rt_convert_s64_to_f32(source)
-	TRANSMUTE_N32.f32 = source
+-- SECTION odd_rounded_u64
+-- NEEDS bit_lshift
+-- NEEDS bit_or
+-- NEEDS bit_rshift
+local function odd_rounded_u64(source)
+	-- LuaJIT turns a 64-bit integer into a `float` by way of a `double`, which
+	-- rounds twice and is miscompiled outright once the high bit is set.
+	-- Rounding to odd at 53 bits makes the `double` a faithful stand-in, so the
+	-- `double` to `float` store stays the only rounding that is ever applied.
+	if source < 0x20000000000000ULL then
+		return tonumber(source)
+	end
 
-	return TRANSMUTE_N32.i32
+	local value = source
+	local shift = 0
+
+	if value >= 0x2000000000000000ULL then
+		value = bit_rshift(value, 8)
+		shift = shift + 8
+	end
+
+	if value >= 0x200000000000000ULL then
+		value = bit_rshift(value, 4)
+		shift = shift + 4
+	end
+
+	if value >= 0x80000000000000ULL then
+		value = bit_rshift(value, 2)
+		shift = shift + 2
+	end
+
+	if value >= 0x40000000000000ULL then
+		value = bit_rshift(value, 1)
+		shift = shift + 1
+	end
+
+	shift = shift + 1
+	value = bit_rshift(source, shift)
+
+	if bit_lshift(value, shift) ~= source then
+		value = bit_or(value, 1ULL)
+	end
+
+	return tonumber(value) * (2 ^ shift)
+end
+
+-- SECTION convert_s64_to_f32
+-- NEEDS bit_or
+-- NEEDS ffi_cast
+-- NEEDS odd_rounded_u64
+-- NEEDS transmute_n32
+-- NEEDS u64_type
+local function rt_convert_s64_to_f32(source)
+	local negative = source < 0LL
+
+	if negative then
+		source = -source
+	end
+
+	TRANSMUTE_N32.f32 = odd_rounded_u64(ffi_cast(u64_type, source))
+
+	local result = TRANSMUTE_N32.i32
+
+	if negative then
+		result = bit_or(result, 0x80000000)
+	end
+
+	return result
 end
 
 -- SECTION convert_u64_to_f32
 -- NEEDS ffi_cast
+-- NEEDS odd_rounded_u64
 -- NEEDS transmute_n32
 -- NEEDS u64_type
 local function rt_convert_u64_to_f32(source)
 	source = ffi_cast(u64_type, source)
 
-	TRANSMUTE_N32.f32 = source
+	TRANSMUTE_N32.f32 = odd_rounded_u64(source)
 
 	return TRANSMUTE_N32.i32
 end
@@ -370,13 +433,26 @@ local function rt_convert_s64_to_f64(source)
 end
 
 -- SECTION convert_u64_to_f64
+-- NEEDS bit_and
+-- NEEDS bit_or
+-- NEEDS bit_rshift
 -- NEEDS ffi_cast
+-- NEEDS i64_type
 -- NEEDS transmute_n64
 -- NEEDS u64_type
 local function rt_convert_u64_to_f64(source)
 	source = ffi_cast(u64_type, source)
 
-	TRANSMUTE_N64.f64 = source
+	if source < 0x8000000000000000ULL then
+		TRANSMUTE_N64.f64 = tonumber(ffi_cast(i64_type, source))
+	else
+		-- LuaJIT's `uint64 -> double` drops the low bits once a trace compiles
+		-- it. Halving the value keeps it inside `int64_t`, and the sticky low
+		-- bit keeps the rounding decision, so doubling back is exact.
+		local halved = bit_or(bit_rshift(source, 1), bit_and(source, 1ULL))
+
+		TRANSMUTE_N64.f64 = tonumber(ffi_cast(i64_type, halved)) * 2
+	end
 
 	return TRANSMUTE_N64.i64
 end

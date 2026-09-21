@@ -19,15 +19,20 @@ end
 local rt_square_root_f32 = NATIVE_F32.square_root_f32
 
 -- SECTION round_up_f32
+-- NEEDS bit_and
 -- NEEDS from_bits_f32
 -- NEEDS into_bits_f32
 -- NEEDS math_ceil
 local function rt_round_up_f32(source)
-	source = from_bits_f32(source)
-	source = math_ceil(source)
-	source = into_bits_f32(source)
+	local result = into_bits_f32(math_ceil(from_bits_f32(source)))
 
-	return source
+	-- LuaJIT's `math.ceil` loses the sign of a zero result for some inputs in
+	-- the range `(-1, 0)`, so it is restored from the operand here.
+	if result == 0 then
+		result = bit_and(source, 0x80000000)
+	end
+
+	return result
 end
 
 -- SECTION round_down_f32
@@ -96,41 +101,43 @@ local rt_multiply_f32 = NATIVE_F32.multiply_f32
 local rt_divide_f32 = NATIVE_F32.divide_f32
 
 -- SECTION minimum_f32
+-- NEEDS bit_or
 -- NEEDS from_bits_f32
--- NEEDS into_bits_f32
--- NEEDS math_min
 local function rt_minimum_f32(lhs, rhs)
-	if rhs >= 0 then
-		lhs, rhs = rhs, lhs
+	local left = from_bits_f32(lhs)
+	local right = from_bits_f32(rhs)
+
+	if left < right then
+		return lhs
+	elseif right < left then
+		return rhs
+	elseif left == right then
+		-- `-0` and `0` compare equal, so the sign bits pick the smaller zero.
+		return bit_or(lhs, rhs)
+	else
+		-- Either operand being a NaN makes the result a NaN.
+		return 0x7FC00000
 	end
-
-	lhs = from_bits_f32(lhs)
-	rhs = from_bits_f32(rhs)
-
-	local result = math_min(lhs, rhs)
-
-	result = into_bits_f32(result)
-
-	return result
 end
 
 -- SECTION maximum_f32
+-- NEEDS bit_and
 -- NEEDS from_bits_f32
--- NEEDS into_bits_f32
--- NEEDS math_max
 local function rt_maximum_f32(lhs, rhs)
-	if rhs < 0 then
-		lhs, rhs = rhs, lhs
+	local left = from_bits_f32(lhs)
+	local right = from_bits_f32(rhs)
+
+	if left > right then
+		return lhs
+	elseif right > left then
+		return rhs
+	elseif left == right then
+		-- `-0` and `0` compare equal, so the sign bits pick the larger zero.
+		return bit_and(lhs, rhs)
+	else
+		-- Either operand being a NaN makes the result a NaN.
+		return 0x7FC00000
 	end
-
-	lhs = from_bits_f32(lhs)
-	rhs = from_bits_f32(rhs)
-
-	local result = math_max(lhs, rhs)
-
-	result = into_bits_f32(result)
-
-	return result
 end
 
 -- SECTION copy_sign_f32

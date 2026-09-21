@@ -22,6 +22,8 @@ pub struct Function {
 	pub code: Sequence,
 	/// The return expressions.
 	pub returns: Vec<Expression>,
+	/// The structural WebAssembly type key registered for this function, if any.
+	pub key: Option<Arc<str>>,
 }
 
 /// A scoped function expression with captured dependencies.
@@ -306,6 +308,8 @@ pub struct TableNew {
 pub struct TableGet {
 	/// The source expression.
 	pub source: Location,
+	/// The structural WebAssembly function type key the element is checked against.
+	pub key: Option<Arc<str>>,
 }
 
 /// A table size query expression.
@@ -328,6 +332,8 @@ pub struct TableGrow {
 pub struct MemoryLoad {
 	/// The source expression.
 	pub source: Location,
+	/// The static byte offset added to the address.
+	pub offset: u32,
 	/// The load type.
 	pub kind: LoadType,
 }

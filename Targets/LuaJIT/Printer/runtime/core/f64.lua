@@ -27,15 +27,20 @@ local function rt_square_root_f64(source)
 end
 
 -- SECTION round_up_f64
+-- NEEDS bit_and
 -- NEEDS from_bits_f64
 -- NEEDS into_bits_f64
 -- NEEDS math_ceil
 local function rt_round_up_f64(source)
-	source = from_bits_f64(source)
-	source = math_ceil(source)
-	source = into_bits_f64(source)
+	local result = into_bits_f64(math_ceil(from_bits_f64(source)))
 
-	return source
+	-- LuaJIT's `math.ceil` loses the sign of a zero result for some inputs in
+	-- the range `(-1, 0)`, so it is restored from the operand here.
+	if result == 0LL then
+		result = bit_and(source, 0x8000000000000000LL)
+	end
+
+	return result
 end
 
 -- SECTION round_down_f64
@@ -136,43 +141,43 @@ local function rt_divide_f64(lhs, rhs)
 end
 
 -- SECTION minimum_f64
--- NEEDS bit_and
+-- NEEDS bit_or
 -- NEEDS from_bits_f64
--- NEEDS into_bits_f64
--- NEEDS math_min
 local function rt_minimum_f64(lhs, rhs)
-	if rhs >= 0LL then
-		lhs, rhs = rhs, lhs
+	local left = from_bits_f64(lhs)
+	local right = from_bits_f64(rhs)
+
+	if left < right then
+		return lhs
+	elseif right < left then
+		return rhs
+	elseif left == right then
+		-- `-0` and `0` compare equal, so the sign bits pick the smaller zero.
+		return bit_or(lhs, rhs)
+	else
+		-- Either operand being a NaN makes the result a NaN.
+		return 0x7FF8000000000000LL
 	end
-
-	lhs = from_bits_f64(lhs)
-	rhs = from_bits_f64(rhs)
-
-	local result = math_min(lhs, rhs)
-
-	result = into_bits_f64(result)
-
-	return result
 end
 
 -- SECTION maximum_f64
 -- NEEDS bit_and
 -- NEEDS from_bits_f64
--- NEEDS into_bits_f64
--- NEEDS math_max
 local function rt_maximum_f64(lhs, rhs)
-	if rhs < 0LL then
-		lhs, rhs = rhs, lhs
+	local left = from_bits_f64(lhs)
+	local right = from_bits_f64(rhs)
+
+	if left > right then
+		return lhs
+	elseif right > left then
+		return rhs
+	elseif left == right then
+		-- `-0` and `0` compare equal, so the sign bits pick the larger zero.
+		return bit_and(lhs, rhs)
+	else
+		-- Either operand being a NaN makes the result a NaN.
+		return 0x7FF8000000000000LL
 	end
-
-	lhs = from_bits_f64(lhs)
-	rhs = from_bits_f64(rhs)
-
-	local result = math_max(lhs, rhs)
-
-	result = into_bits_f64(result)
-
-	return result
 end
 
 -- SECTION copy_sign_f64

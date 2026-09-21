@@ -97,3 +97,40 @@ local function rt_table_drop(destination)
 	destination.minimum = 0
 	destination.maximum = 0
 end
+
+-- SECTION function_types
+-- An indirect call compares the WebAssembly type of the function it found against the
+-- type the call site expects, so every function a module defines registers its key here.
+-- The table is weak keyed so an unreachable function value is still collected, and a host
+-- function simply has no entry, which leaves it unchecked.
+local rt_function_types = setmetatable({}, { __mode = "k" })
+
+-- SECTION function_type
+-- NEEDS function_types
+local function rt_function_type(source, key)
+	rt_function_types[source] = key
+
+	return source
+end
+
+-- SECTION table_get_function
+-- NEEDS function_types
+local function rt_table_get_function(source, offset, expected)
+	if offset < 0 or offset >= source.minimum then
+		error("undefined element")
+	end
+
+	local result = source[offset]
+
+	if result == nil then
+		error("uninitialized element")
+	end
+
+	local actual = rt_function_types[result]
+
+	if actual ~= nil and actual ~= expected then
+		error("indirect call type mismatch")
+	end
+
+	return result
+end

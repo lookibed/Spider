@@ -25,12 +25,14 @@ end
 -- NEEDS any_pointer_type
 -- NEEDS ffi_cast
 -- NEEDS u8_pointer_type
-local function rt_load_i32_from_s8(source, offset)
-	if offset < 0 or offset + 1 > source.minimum then
+local function rt_load_i32_from_s8(source, base, offset)
+	local index = base + offset
+
+	if base < 0 or index + 1 > source.minimum then
 		error("out of bounds memory load")
 	end
 
-	local address = ffi_cast(u8_pointer_type, source.data) + offset
+	local address = ffi_cast(u8_pointer_type, source.data) + index
 
 	return ffi_cast(any_pointer_type, address).i8
 end
@@ -39,12 +41,14 @@ end
 -- NEEDS any_pointer_type
 -- NEEDS ffi_cast
 -- NEEDS u8_pointer_type
-local function rt_load_i32_from_u8(source, offset)
-	if offset < 0 or offset + 1 > source.minimum then
+local function rt_load_i32_from_u8(source, base, offset)
+	local index = base + offset
+
+	if base < 0 or index + 1 > source.minimum then
 		error("out of bounds memory load")
 	end
 
-	local address = ffi_cast(u8_pointer_type, source.data) + offset
+	local address = ffi_cast(u8_pointer_type, source.data) + index
 
 	return ffi_cast(any_pointer_type, address).u8
 end
@@ -53,12 +57,14 @@ end
 -- NEEDS any_pointer_type
 -- NEEDS ffi_cast
 -- NEEDS u8_pointer_type
-local function rt_load_i32_from_s16(source, offset)
-	if offset < 0 or offset + 2 > source.minimum then
+local function rt_load_i32_from_s16(source, base, offset)
+	local index = base + offset
+
+	if base < 0 or index + 2 > source.minimum then
 		error("out of bounds memory load")
 	end
 
-	local address = ffi_cast(u8_pointer_type, source.data) + offset
+	local address = ffi_cast(u8_pointer_type, source.data) + index
 
 	return ffi_cast(any_pointer_type, address).i16
 end
@@ -67,12 +73,14 @@ end
 -- NEEDS any_pointer_type
 -- NEEDS ffi_cast
 -- NEEDS u8_pointer_type
-local function rt_load_i32_from_u16(source, offset)
-	if offset < 0 or offset + 2 > source.minimum then
+local function rt_load_i32_from_u16(source, base, offset)
+	local index = base + offset
+
+	if base < 0 or index + 2 > source.minimum then
 		error("out of bounds memory load")
 	end
 
-	local address = ffi_cast(u8_pointer_type, source.data) + offset
+	local address = ffi_cast(u8_pointer_type, source.data) + index
 
 	return ffi_cast(any_pointer_type, address).u16
 end
@@ -81,12 +89,14 @@ end
 -- NEEDS any_pointer_type
 -- NEEDS ffi_cast
 -- NEEDS u8_pointer_type
-local function rt_load_i32(source, offset)
-	if offset < 0 or offset + 4 > source.minimum then
+local function rt_load_i32(source, base, offset)
+	local index = base + offset
+
+	if base < 0 or index + 4 > source.minimum then
 		error("out of bounds memory load")
 	end
 
-	local address = ffi_cast(u8_pointer_type, source.data) + offset
+	local address = ffi_cast(u8_pointer_type, source.data) + index
 
 	return ffi_cast(any_pointer_type, address).i32
 end
@@ -96,12 +106,14 @@ end
 -- NEEDS ffi_cast
 -- NEEDS i64_type
 -- NEEDS u8_pointer_type
-local function rt_load_i64_from_s8(source, offset)
-	if offset < 0 or offset + 1 > source.minimum then
+local function rt_load_i64_from_s8(source, base, offset)
+	local index = base + offset
+
+	if base < 0 or index + 1 > source.minimum then
 		error("out of bounds memory load")
 	end
 
-	local address = ffi_cast(u8_pointer_type, source.data) + offset
+	local address = ffi_cast(u8_pointer_type, source.data) + index
 	local result = ffi_cast(i64_type, ffi_cast(any_pointer_type, address).i8)
 
 	return result
@@ -112,12 +124,14 @@ end
 -- NEEDS ffi_cast
 -- NEEDS i64_type
 -- NEEDS u8_pointer_type
-local function rt_load_i64_from_u8(source, offset)
-	if offset < 0 or offset + 1 > source.minimum then
+local function rt_load_i64_from_u8(source, base, offset)
+	local index = base + offset
+
+	if base < 0 or index + 1 > source.minimum then
 		error("out of bounds memory load")
 	end
 
-	local address = ffi_cast(u8_pointer_type, source.data) + offset
+	local address = ffi_cast(u8_pointer_type, source.data) + index
 	local result = ffi_cast(i64_type, ffi_cast(any_pointer_type, address).u8)
 
 	return result
@@ -128,12 +142,14 @@ end
 -- NEEDS ffi_cast
 -- NEEDS i64_type
 -- NEEDS u8_pointer_type
-local function rt_load_i64_from_s16(source, offset)
-	if offset < 0 or offset + 2 > source.minimum then
+local function rt_load_i64_from_s16(source, base, offset)
+	local index = base + offset
+
+	if base < 0 or index + 2 > source.minimum then
 		error("out of bounds memory load")
 	end
 
-	local address = ffi_cast(u8_pointer_type, source.data) + offset
+	local address = ffi_cast(u8_pointer_type, source.data) + index
 	local result = ffi_cast(i64_type, ffi_cast(any_pointer_type, address).i16)
 
 	return result
@@ -144,12 +160,14 @@ end
 -- NEEDS ffi_cast
 -- NEEDS i64_type
 -- NEEDS u8_pointer_type
-local function rt_load_i64_from_u16(source, offset)
-	if offset < 0 or offset + 2 > source.minimum then
+local function rt_load_i64_from_u16(source, base, offset)
+	local index = base + offset
+
+	if base < 0 or index + 2 > source.minimum then
 		error("out of bounds memory load")
 	end
 
-	local address = ffi_cast(u8_pointer_type, source.data) + offset
+	local address = ffi_cast(u8_pointer_type, source.data) + index
 	local result = ffi_cast(i64_type, ffi_cast(any_pointer_type, address).u16)
 
 	return result
@@ -160,12 +178,14 @@ end
 -- NEEDS ffi_cast
 -- NEEDS i64_type
 -- NEEDS u8_pointer_type
-local function rt_load_i64_from_s32(source, offset)
-	if offset < 0 or offset + 4 > source.minimum then
+local function rt_load_i64_from_s32(source, base, offset)
+	local index = base + offset
+
+	if base < 0 or index + 4 > source.minimum then
 		error("out of bounds memory load")
 	end
 
-	local address = ffi_cast(u8_pointer_type, source.data) + offset
+	local address = ffi_cast(u8_pointer_type, source.data) + index
 	local result = ffi_cast(i64_type, ffi_cast(any_pointer_type, address).i32)
 
 	return result
@@ -176,12 +196,14 @@ end
 -- NEEDS ffi_cast
 -- NEEDS i64_type
 -- NEEDS u8_pointer_type
-local function rt_load_i64_from_u32(source, offset)
-	if offset < 0 or offset + 4 > source.minimum then
+local function rt_load_i64_from_u32(source, base, offset)
+	local index = base + offset
+
+	if base < 0 or index + 4 > source.minimum then
 		error("out of bounds memory load")
 	end
 
-	local address = ffi_cast(u8_pointer_type, source.data) + offset
+	local address = ffi_cast(u8_pointer_type, source.data) + index
 	local result = ffi_cast(i64_type, ffi_cast(any_pointer_type, address).u32)
 
 	return result
@@ -191,12 +213,14 @@ end
 -- NEEDS any_pointer_type
 -- NEEDS ffi_cast
 -- NEEDS u8_pointer_type
-local function rt_load_i64(source, offset)
-	if offset < 0 or offset + 8 > source.minimum then
+local function rt_load_i64(source, base, offset)
+	local index = base + offset
+
+	if base < 0 or index + 8 > source.minimum then
 		error("out of bounds memory load")
 	end
 
-	local address = ffi_cast(u8_pointer_type, source.data) + offset
+	local address = ffi_cast(u8_pointer_type, source.data) + index
 
 	return ffi_cast(any_pointer_type, address).i64
 end
@@ -205,12 +229,14 @@ end
 -- NEEDS any_pointer_type
 -- NEEDS ffi_cast
 -- NEEDS u8_pointer_type
-local function rt_load_f32(source, offset)
-	if offset < 0 or offset + 4 > source.minimum then
+local function rt_load_f32(source, base, offset)
+	local index = base + offset
+
+	if base < 0 or index + 4 > source.minimum then
 		error("out of bounds memory load")
 	end
 
-	local address = ffi_cast(u8_pointer_type, source.data) + offset
+	local address = ffi_cast(u8_pointer_type, source.data) + index
 
 	return ffi_cast(any_pointer_type, address).i32
 end
@@ -218,12 +244,14 @@ end
 -- SECTION load_f64
 -- NEEDS load_i64
 -- NEEDS transmute_i64_to_f64
-local function rt_load_f64(source, offset)
-	if offset < 0 or offset + 8 > source.minimum then
+local function rt_load_f64(source, base, offset)
+	local index = base + offset
+
+	if base < 0 or index + 8 > source.minimum then
 		error("out of bounds memory load")
 	end
 
-	local address = ffi_cast(u8_pointer_type, source.data) + offset
+	local address = ffi_cast(u8_pointer_type, source.data) + index
 
 	return ffi_cast(any_pointer_type, address).i64
 end
@@ -232,12 +260,14 @@ end
 -- NEEDS any_pointer_type
 -- NEEDS ffi_cast
 -- NEEDS u8_pointer_type
-local function rt_store_i32_into_i8(destination, offset, source)
-	if offset < 0 or offset + 1 > destination.minimum then
+local function rt_store_i32_into_i8(destination, base, offset, source)
+	local index = base + offset
+
+	if base < 0 or index + 1 > destination.minimum then
 		error("out of bounds memory store")
 	end
 
-	local address = ffi_cast(u8_pointer_type, destination.data) + offset
+	local address = ffi_cast(u8_pointer_type, destination.data) + index
 
 	ffi_cast(any_pointer_type, address).i8 = source
 end
@@ -246,12 +276,14 @@ end
 -- NEEDS any_pointer_type
 -- NEEDS ffi_cast
 -- NEEDS u8_pointer_type
-local function rt_store_i32_into_i16(destination, offset, source)
-	if offset < 0 or offset + 2 > destination.minimum then
+local function rt_store_i32_into_i16(destination, base, offset, source)
+	local index = base + offset
+
+	if base < 0 or index + 2 > destination.minimum then
 		error("out of bounds memory store")
 	end
 
-	local address = ffi_cast(u8_pointer_type, destination.data) + offset
+	local address = ffi_cast(u8_pointer_type, destination.data) + index
 
 	ffi_cast(any_pointer_type, address).i16 = source
 end
@@ -260,12 +292,14 @@ end
 -- NEEDS any_pointer_type
 -- NEEDS ffi_cast
 -- NEEDS u8_pointer_type
-local function rt_store_i32(destination, offset, source)
-	if offset < 0 or offset + 4 > destination.minimum then
+local function rt_store_i32(destination, base, offset, source)
+	local index = base + offset
+
+	if base < 0 or index + 4 > destination.minimum then
 		error("out of bounds memory store")
 	end
 
-	local address = ffi_cast(u8_pointer_type, destination.data) + offset
+	local address = ffi_cast(u8_pointer_type, destination.data) + index
 
 	ffi_cast(any_pointer_type, address).i32 = source
 end
@@ -274,12 +308,14 @@ end
 -- NEEDS any_pointer_type
 -- NEEDS ffi_cast
 -- NEEDS u8_pointer_type
-local function rt_store_i64_into_i8(destination, offset, source)
-	if offset < 0 or offset + 1 > destination.minimum then
+local function rt_store_i64_into_i8(destination, base, offset, source)
+	local index = base + offset
+
+	if base < 0 or index + 1 > destination.minimum then
 		error("out of bounds memory store")
 	end
 
-	local address = ffi_cast(u8_pointer_type, destination.data) + offset
+	local address = ffi_cast(u8_pointer_type, destination.data) + index
 
 	ffi_cast(any_pointer_type, address).i8 = source
 end
@@ -288,12 +324,14 @@ end
 -- NEEDS any_pointer_type
 -- NEEDS ffi_cast
 -- NEEDS u8_pointer_type
-local function rt_store_i64_into_i16(destination, offset, source)
-	if offset < 0 or offset + 2 > destination.minimum then
+local function rt_store_i64_into_i16(destination, base, offset, source)
+	local index = base + offset
+
+	if base < 0 or index + 2 > destination.minimum then
 		error("out of bounds memory store")
 	end
 
-	local address = ffi_cast(u8_pointer_type, destination.data) + offset
+	local address = ffi_cast(u8_pointer_type, destination.data) + index
 
 	ffi_cast(any_pointer_type, address).i16 = source
 end
@@ -302,12 +340,14 @@ end
 -- NEEDS any_pointer_type
 -- NEEDS ffi_cast
 -- NEEDS u8_pointer_type
-local function rt_store_i64_into_i32(destination, offset, source)
-	if offset < 0 or offset + 4 > destination.minimum then
+local function rt_store_i64_into_i32(destination, base, offset, source)
+	local index = base + offset
+
+	if base < 0 or index + 4 > destination.minimum then
 		error("out of bounds memory store")
 	end
 
-	local address = ffi_cast(u8_pointer_type, destination.data) + offset
+	local address = ffi_cast(u8_pointer_type, destination.data) + index
 
 	ffi_cast(any_pointer_type, address).i32 = source
 end
@@ -316,12 +356,14 @@ end
 -- NEEDS any_pointer_type
 -- NEEDS ffi_cast
 -- NEEDS u8_pointer_type
-local function rt_store_i64(destination, offset, source)
-	if offset < 0 or offset + 8 > destination.minimum then
+local function rt_store_i64(destination, base, offset, source)
+	local index = base + offset
+
+	if base < 0 or index + 8 > destination.minimum then
 		error("out of bounds memory store")
 	end
 
-	local address = ffi_cast(u8_pointer_type, destination.data) + offset
+	local address = ffi_cast(u8_pointer_type, destination.data) + index
 
 	ffi_cast(any_pointer_type, address).i64 = source
 end
@@ -330,12 +372,14 @@ end
 -- NEEDS any_pointer_type
 -- NEEDS ffi_cast
 -- NEEDS u8_pointer_type
-local function rt_store_f32(destination, offset, source)
-	if offset < 0 or offset + 4 > destination.minimum then
+local function rt_store_f32(destination, base, offset, source)
+	local index = base + offset
+
+	if base < 0 or index + 4 > destination.minimum then
 		error("out of bounds memory store")
 	end
 
-	local address = ffi_cast(u8_pointer_type, destination.data) + offset
+	local address = ffi_cast(u8_pointer_type, destination.data) + index
 
 	ffi_cast(any_pointer_type, address).i32 = source
 end
@@ -344,12 +388,14 @@ end
 -- NEEDS any_pointer_type
 -- NEEDS ffi_cast
 -- NEEDS u8_pointer_type
-local function rt_store_f64(destination, offset, source)
-	if offset < 0 or offset + 8 > destination.minimum then
+local function rt_store_f64(destination, base, offset, source)
+	local index = base + offset
+
+	if base < 0 or index + 8 > destination.minimum then
 		error("out of bounds memory store")
 	end
 
-	local address = ffi_cast(u8_pointer_type, destination.data) + offset
+	local address = ffi_cast(u8_pointer_type, destination.data) + index
 
 	ffi_cast(any_pointer_type, address).i64 = source
 end
