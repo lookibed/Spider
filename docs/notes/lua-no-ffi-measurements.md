@@ -335,3 +335,155 @@ So the honest comparison is:
 The honest summary is:
 
 `lua-no-ffi` is now strong enough to validate real upstream libraries for correctness, but the performance profile still depends heavily on workload shape, and stateful float-heavy simulations are currently very expensive.
+
+## Runtime Table, `2026-09-23` Linux re-measurement
+
+A fresh three-way run of the fixtures from the Runtime Table above, on Linux (WSL2, 16 cores),
+against commit `816091a` (packed-word memory runtime). `wasmtime-cli 24.0.1`, `LuaJIT 2.1.0-beta3`.
+The CLI was built in a private target directory and every `lua-no-ffi` and `lua-jit` module was
+regenerated from the fixture's `.wasm` into a scratch copy of the fixture layout; the fresh
+`lua-no-ffi` output is byte-identical to the checked-in `generated/*.lua` for every fixture.
+Every result matched `wasmtime` bit for bit (both Lua targets, wherever they load).
+
+Load average: `0.05` before the series; the one-minute figure rose to `2.8` at its peak during the
+run, which is the measurement itself (`wasmtime -C cache=n` compiles with parallel Cranelift
+threads), and was back under `1.0` at the end.
+
+How each column was taken:
+
+- **Whole process** — `/usr/bin/time`, minimum of five runs. `wasmtime` is
+  `wasmtime run -C cache=n --invoke <export> <file.wasm> <args>`; for a multi-export operation it is
+  the **sum** of one process per export (minimum of five each), which is how the Windows table was
+  taken. So `wasmtime` pays module compilation once per export: `~10 ms` for `hash_loop.wasm`,
+  `~50 ms` for the `libjpeg-turbo` modules, and `46.5 ms × 16` for the self-hosting fixture. The Lua
+  side is one `luajit` process that loads the generated module once and calls the same exports once.
+- **Kernel** — the Lua side is `os.clock()` around the export calls only, inside a driver that loads
+  the module once, warms the operation up once, and takes the minimum of five. The instance is
+  reused when repeated calls return the same result. Rows marked † get a fresh instance for every
+  timed call because a second call in the same instance changes the result (the `miniz` bump
+  heap) or because `main.lua` builds one instance per probe (both `libjpeg-turbo` fixtures). A
+  fresh instance costs a re-trace, because traces are specialised to closure identity: `lodepng`
+  runs in `167 ms` fresh against `97 ms` reused, and `selfhost` in `34 ms` against `15 ms`.
+  **The `wasmtime` column is an approximation.** It is the whole-process time of a precompiled
+  module (`wasmtime compile`, then `run --allow-precompiled`, minimum of fifteen) minus the same
+  module invoked with a non-existent export (`6.2`–`6.5 ms`), summed over the exports. Under `1 ms`
+  it is inside the noise, so it is shown as `< 1 ms` and the ratio as a lower bound.
+- **Max RSS** — `%M` from `/usr/bin/time`, largest of the five whole-process runs.
+- **Traces** — `luajit -jv` over one whole-process run: traces started and `TRACE ---` aborts.
+
+The old Windows column is the slowdown from the Runtime Table above: Windows, three-run averages,
+whole-process, pre-transition runtime. It compares directly only with the whole-process column
+here. In the kernel table it is context only, because the old figures were dominated by startup
+on the small fixtures.
+
+`lua-jit` fails to load on nine of the fifteen rows (eight fixtures) with `function at line N has more than 60
+upvalues`: `tinyexpr`, `miniz-full`, `miniz-file`, `chipmunk`, `libjpeg-turbo`, `libjpeg-turbo-mjpeg`,
+self-hosting, and `gltf-rs`. `wasmtime` cannot run `gltf-rs` from the CLI: it needs the host to copy
+the `.glb` into linear memory before the call.
+
+#### Whole process (`/usr/bin/time`, minimum of five)
+
+| Fixture | Compared operation | `wasmtime` | `lua-no-ffi` | `lua-jit` | no-ffi / `wasmtime` | old Windows slowdown |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| `hash-compare` | `hash_loop(123456789, 200000)` | `10.0 ms` | `2.83 ms` | `2.46 ms` | `0.28x` | `0.53x` |
+| `float-compare` | `hash_f32(2048) + hash_f64(2048)` | `19.8 ms` (2 procs) | `10.8 ms` | `23.9 ms` | `0.55x` | `1.10x` |
+| `i64-compare` | `hash_i64_mix(512) + hash_i64_div(512)` | `22.0 ms` (2 procs) | `7.34 ms` | `2.69 ms` | `0.33x` | `0.63x` |
+| `real-world-tinyexpr` | `tinyexpr_hash(256) + tinyexpr_error_code()` | `29.2 ms` (2 procs) | `15.6 ms` | fails to load | `0.54x` | `1.05x` |
+| `real-world-miniz` | `miniz_roundtrip_hash(6)` | `25.5 ms` | `28.6 ms` | `35.9 ms` | `1.12x` | `2.38x` |
+| `real-world-miniz-full` | `miniz_full_hash(6)` | `28.3 ms` | `40.4 ms` | fails to load | `1.43x` | `5.73x` |
+| `real-world-miniz-file` | `miniz_file_hash(6)` | `28.7 ms` | `75.6 ms` | fails to load | `2.63x` | `10.27x` |
+| `real-world-chipmunk` | `chipmunk_hash_scene(600)` | `22.0 ms` | `2 449 ms` | fails to load | `111.15x` | `691.62x` |
+| `real-world-chipmunk` | `chipmunk_hash_scene(60)` | `20.6 ms` | `66.5 ms` | fails to load | `3.23x` | n/a |
+| `real-world-lodepng` | `variant = 0 full probe set` (5 exports) | `151 ms` (5 procs) | `153 ms` | `93.6 ms` | `1.01x` | `2.99x` |
+| `real-world-libjpeg-turbo` | `full JPEG probe set` (6 exports) | `306 ms` (6 procs) | `675 ms` | fails to load | `2.21x` | `3.32x` |
+| `real-world-libjpeg-turbo-mjpeg` | `frame_limit = 12 full probe set` (8 exports) | `412 ms` (8 procs) | `1 356 ms` | fails to load | `3.29x` | `37.49x` |
+| `real-world-binjgb` | `frame_limit = 16 full probe set` (6 exports) | `258 ms` (6 procs) | `1 599 ms` | `837 ms` | `6.20x` | `8.42x` |
+| `self-hosting-luanoffi-builder` | `full probe set` (3 cases, 16 exports) | `720 ms` (16 procs) | `69.8 ms` | fails to load | `0.10x` | n/a |
+| `real-world-gltf-rs` | `gltf_compute_hash on fixtures/Box.glb` | n/a | `86.5 ms` | fails to load | n/a | n/a |
+
+#### In-process kernel (compared operation only)
+
+| Fixture | Compared operation | `wasmtime` (approx.) | `lua-no-ffi` | `lua-jit` | no-ffi / `wasmtime` | old Windows slowdown |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| `hash-compare` | `hash_loop(123456789, 200000)` | `< 1 ms` | `0.44 ms` | `0.44 ms` | noise | `0.53x` |
+| `float-compare` | `hash_f32(2048) + hash_f64(2048)` | `< 1 ms` | `0.39 ms` | `0.15 ms` | noise | `1.10x` |
+| `i64-compare` | `hash_i64_mix(512) + hash_i64_div(512)` | `< 1 ms` | `0.82 ms` | `0.02 ms` | noise | `0.63x` |
+| `real-world-tinyexpr` | `tinyexpr_hash(256) + tinyexpr_error_code()` | `< 1 ms` | `1.56 ms` | fails to load | `> 1.6x` | `1.05x` |
+| `real-world-miniz` | `miniz_roundtrip_hash(6)` | `< 1 ms` | `8.48 ms` † | `1.52 ms` | `> 8.5x` | `2.38x` |
+| `real-world-miniz-full` | `miniz_full_hash(6)` | `< 1 ms` | `8.44 ms` | fails to load | `> 8.4x` | `5.73x` |
+| `real-world-miniz-file` | `miniz_file_hash(6)` | `< 1 ms` | `22.9 ms` | fails to load | `> 22.9x` | `10.27x` |
+| `real-world-chipmunk` | `chipmunk_hash_scene(600)` | `2.72 ms` | `2 543 ms` | fails to load | `936.47x` | `691.62x` |
+| `real-world-chipmunk` | `chipmunk_hash_scene(60)` | `< 1 ms` | `10.5 ms` | fails to load | `> 10.5x` | n/a |
+| `real-world-lodepng` | `variant = 0 full probe set` (5 exports) | `3.33 ms` | `127 ms` | `19.7 ms` | `38.10x` | `2.99x` |
+| `real-world-libjpeg-turbo` | `full JPEG probe set` (6 exports) | `2.16 ms` | `263 ms` † | fails to load | `122.15x` | `3.32x` |
+| `real-world-libjpeg-turbo-mjpeg` | `frame_limit = 12 full probe set` (8 exports) | `5.42 ms` | `954 ms` † | fails to load | `175.77x` | `37.49x` |
+| `real-world-binjgb` | `frame_limit = 16 full probe set` (6 exports) | `29.3 ms` | `1 062 ms` | `759 ms` | `36.21x` | `8.42x` |
+| `self-hosting-luanoffi-builder` | `full probe set` (3 cases, 16 exports) | `2.59 ms` | `12.3 ms` | fails to load | `4.77x` | n/a |
+| `real-world-gltf-rs` | `gltf_compute_hash on fixtures/Box.glb` | n/a | `8.73 ms` | fails to load | n/a | n/a |
+
+#### Max RSS (whole process)
+
+| Fixture | Compared operation | `wasmtime` | `lua-no-ffi` | `lua-jit` | no-ffi / `wasmtime` |
+| --- | --- | ---: | ---: | ---: | ---: |
+| `hash-compare` | `hash_loop(123456789, 200000)` | `19.6 MB` | `2.6 MB` | `2.5 MB` | `0.13x` |
+| `float-compare` | `hash_f32(2048) + hash_f64(2048)` | `20.1 MB` | `3.2 MB` | `2.9 MB` | `0.16x` |
+| `i64-compare` | `hash_i64_mix(512) + hash_i64_div(512)` | `21.4 MB` | `3.4 MB` | `2.8 MB` | `0.16x` |
+| `real-world-tinyexpr` | `tinyexpr_hash(256) + tinyexpr_error_code()` | `25.1 MB` | `4.5 MB` | fails to load | `0.18x` |
+| `real-world-miniz` | `miniz_roundtrip_hash(6)` | `30.5 MB` | `5.4 MB` | `4.4 MB` | `0.18x` |
+| `real-world-miniz-full` | `miniz_full_hash(6)` | `36.7 MB` | `20.2 MB` | fails to load | `0.55x` |
+| `real-world-miniz-file` | `miniz_file_hash(6)` | `39.3 MB` | `45.0 MB` | fails to load | `1.15x` |
+| `real-world-chipmunk` | `chipmunk_hash_scene(600)` | `29.0 MB` | `25.2 MB` | fails to load | `0.87x` |
+| `real-world-chipmunk` | `chipmunk_hash_scene(60)` | `28.9 MB` | `17.6 MB` | fails to load | `0.61x` |
+| `real-world-lodepng` | `variant = 0 full probe set` (5 exports) | `41.4 MB` | `41.9 MB` | `23.4 MB` | `1.01x` |
+| `real-world-libjpeg-turbo` | `full JPEG probe set` (6 exports) | `48.6 MB` | `139.2 MB` | fails to load | `2.86x` |
+| `real-world-libjpeg-turbo-mjpeg` | `frame_limit = 12 full probe set` (8 exports) | `49.0 MB` | `201.4 MB` | fails to load | `4.11x` |
+| `real-world-binjgb` | `frame_limit = 16 full probe set` (6 exports) | `38.8 MB` | `281.5 MB` | `79.1 MB` | `7.25x` |
+| `self-hosting-luanoffi-builder` | `full probe set` (3 cases, 16 exports) | `43.6 MB` | `18.5 MB` | fails to load | `0.42x` |
+| `real-world-gltf-rs` | `gltf_compute_hash on fixtures/Box.glb` | n/a | `24.0 MB` | fails to load | n/a |
+
+#### Generated size and JIT trace health (`luajit -jv`, one whole run)
+
+| Fixture | `.wasm` bytes | `lua-no-ffi` bytes | `lua-jit` bytes | no-ffi traces / aborts | `lua-jit` traces / aborts | top no-ffi abort reasons |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| `hash-compare` | `400` | `10182` | `4612` | `5 / 0` | `4 / 0` | — |
+| `float-compare` | `897` | `23794` | `17443` | `49 / 34` | `28 / 27` | loop unroll limit reached ×32; leaving loop in root trace ×2 |
+| `i64-compare` | `2435` | `36854` | `19104` | `74 / 10` | `12 / 0` | loop unroll limit reached ×10 |
+| `real-world-tinyexpr` | `14548` | `229325` | `198858` | `118 / 47` | fails to load | loop unroll limit reached ×12; call unroll limit reached ×12; inner loop in root trace ×11 |
+| `real-world-miniz` | `34930` | `459004` | `434665` | `101 / 117` | `89 / 60` | loop unroll limit reached ×84; leaving loop in root trace ×26; inner loop in root trace ×7 |
+| `real-world-miniz-full` | `54142` | `834407` | `795668` | `141 / 65` | fails to load | loop unroll limit reached ×36; leaving loop in root trace ×21; inner loop in root trace ×8 |
+| `real-world-miniz-file` | `65079` | `1022685` | `981759` | `208 / 128` | fails to load | loop unroll limit reached ×81; leaving loop in root trace ×34; inner loop in root trace ×12 |
+| `real-world-chipmunk` (`600`) | `56514` | `632100` | `595106` | `18103 / 11575` | fails to load | loop unroll limit reached ×9053; inner loop in root trace ×1179; leaving loop in root trace ×820 |
+| `real-world-chipmunk` (`60`) | `56514` | `632100` | `595106` | `570 / 372` | fails to load | loop unroll limit reached ×309; leaving loop in root trace ×30; inner loop in root trace ×27 |
+| `real-world-lodepng` | `115716` | `1478703` | `1435117` | `979 / 478` | `431 / 1372` | loop unroll limit reached ×242; too many snapshots ×92; leaving loop in root trace ×65 |
+| `real-world-libjpeg-turbo` | `351224` | `3625308` | `3516777` | `1138 / 752` | fails to load | loop unroll limit reached ×297; NYI: register coalescing too complex ×251; inner loop in root trace ×102 |
+| `real-world-libjpeg-turbo-mjpeg` | `375047` | `3711775` | `3603056` | `4464 / 1964` | fails to load | loop unroll limit reached ×1082; inner loop in root trace ×418; leaving loop in root trace ×204 |
+| `real-world-binjgb` | `135932` | `1618090` | `1571457` | `4074 / 8651` | `1509 / 7247` | NYI: register coalescing too complex ×7130; loop unroll limit reached ×1216; blacklisted ×112 |
+| `self-hosting-luanoffi-builder` | `171389` | `2068990` | `1995751` | `163 / 167` | fails to load | loop unroll limit reached ×122; inner loop in root trace ×27; leaving loop in root trace ×16 |
+| `real-world-gltf-rs` | `552966` | `8014955` | `7921514` | `94 / 100` | fails to load | loop unroll limit reached ×80; leaving loop in root trace ×10; inner loop in root trace ×7 |
+
+
+The biggest remaining gaps, ranked by kernel slowdown against `wasmtime`:
+
+1. `chipmunk_hash_scene(600)` — `~940x` kernel and `111x` whole process, down from `692x` whole
+   process on the old table. The trace log explains it: `18 103` traces, `11 575` aborts, `9 053`
+   of them `loop unroll limit reached`. At `60` steps the same code runs `> 10x` slower
+   (`3.2x` whole process), so the cost is in the long, steady simulation phase and not in load.
+2. `libjpeg-turbo-mjpeg`, `frame_limit = 12` — `~176x` kernel †, `3.3x` whole process (old `37.5x`).
+   The probe set decodes the stream three times, each in a fresh instance. On a reused instance
+   one warm `decode_hash(12)` takes about `235 ms`.
+3. `libjpeg-turbo` — `~122x` kernel †, `2.2x` whole process. `251` aborts are
+   `NYI: register coalescing too complex`, which usually points to too many live values in one trace.
+4. `lodepng`, `variant = 0` — `~38x` kernel, `1.0x` whole process. `lua-jit` runs the same kernel in
+   `19.7 ms` against `127 ms`, so most of this gap is the cost of the packed-word memory and not of
+   the control flow.
+5. `binjgb`, `frame_limit = 16` — `~36x` kernel, `6.2x` whole process, and `7.3x` the RSS
+   (`281 MB`, which is `2x` of the `64 MiB` declared memory plus tables). `7 130` of its `8 651`
+   aborts are `NYI: register coalescing too complex`. `lua-jit` is only `1.4x` faster here, so this
+   one is trace-shape bound more than memory-representation bound.
+6. `miniz-file` — `> 23x` kernel, `2.6x` whole process.
+
+Everything below that is within `~10x` in kernel and within `3.3x` in whole process. Whole
+process looks much kinder than the kernel figures because `wasmtime -C cache=n` spends `10`–`50 ms`
+per process compiling. For short workloads that compile time outweighs the Lua interpreter;
+for anything longer than a few hundred milliseconds of real work the kernel column is the one that
+predicts behaviour.
