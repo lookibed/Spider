@@ -14,6 +14,11 @@ This directory holds the working notes that explain where Spider is actually win
 - [lua-no-ffi-known-bugs.md](lua-no-ffi-known-bugs.md)
 - [problem_lua_limits.md](problem_lua_limits.md)
 
+## Hypothesis notes (read-only studies, no measurements)
+
+- [hypotheses/target-lowering.md](hypotheses/target-lowering.md)
+- [hypotheses/verification.md](hypotheses/verification.md)
+
 ## Performance studies
 
 - [lua-no-ffi-performance-hypotheses.md](lua-no-ffi-performance-hypotheses.md)
