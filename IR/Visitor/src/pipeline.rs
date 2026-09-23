@@ -9,7 +9,7 @@ use crate::{
 	constant_isolator::ConstantIsolator,
 	control::{
 		dead_port_eliminator::DeadPortEliminator, invariant_port_mover::InvariantPortMover,
-		region_identity,
+		region_identity, region_scope,
 	},
 	isle,
 	topological_normalizer::TopologicalNormalizer,
@@ -76,9 +76,21 @@ impl Optimizer {
 	}
 
 	/// Optimizes the graph, returning the new identifier of its omega node.
+	///
+	/// # Panics
+	///
+	/// In a debug build, panics if a pass leaves a node reading a value from outside of
+	/// its own region; if this happens, it is a bug in that pass.
 	pub fn run(&mut self, graph: &mut DataFlowGraph, mut omega: u32) -> u32 {
 		for _ in 0..MAX_OPTIMIZER_ROUNDS {
 			omega = self.topological_normalizer.run(graph, omega);
+
+			// The check needs the topological order the normalizer just established, so
+			// it validates what the previous round produced, and the last round is
+			// covered by the one in `run_post_process`.
+			if cfg!(debug_assertions) {
+				region_scope::assert_scoped(graph);
+			}
 
 			if !self.run_round(graph, omega) {
 				break;
@@ -97,12 +109,21 @@ impl Optimizer {
 	/// Constant isolation runs only here. It deliberately undoes the sharing that common
 	/// subexpression style rewrites rely on, so it has to come after every pass that
 	/// wants constants shared and before the builders that care about live ranges.
+	///
+	/// # Panics
+	///
+	/// In a debug build, panics if a pass leaves a node reading a value from outside of
+	/// its own region; if this happens, it is a bug in that pass.
 	pub fn run_post_process(&mut self, graph: &mut DataFlowGraph, omega: u32) {
 		region_identity::insert(graph);
 
 		self.constant_isolator.run(graph);
 
 		self.topological_normalizer.run(graph, omega);
+
+		if cfg!(debug_assertions) {
+			region_scope::assert_scoped(graph);
+		}
 	}
 }
 

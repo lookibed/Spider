@@ -1,6 +1,5 @@
 use ir_graph::{
 	DataFlowGraph, Link, Node,
-	control::{GammaIn, RegionIn},
 	simple::{
 		GlobalGet, GlobalNew, GlobalSet, Identity, IntegerBinaryOperation, IntegerBinaryOperator,
 		IntegerType, LoadType, Location, MemoryLoad, MemoryStore, StoreType, TableGet, TableSet,
@@ -9,17 +8,25 @@ use ir_graph::{
 
 use super::internal::Context;
 
+// A matched link may end up as an operand of the node a rule builds, and that node takes
+// the place of the one that matched. Resolving a link therefore has to stay inside the
+// region the match started in: an identity always sits in the same region as its source,
+// while a `RegionIn` or `GammaIn` port deliberately crosses one, so those are left alone.
+//
+// Reading through a region boundary would let a rewrite name a value the region has no
+// port for. The target has no local holding that value once the region is entered, since
+// the coalescer only keeps a producer and the boundary port it feeds in the same local,
+// and the region's entry moves are free to overwrite everything else.
 fn get_next_producer(node: &Node, port: u16) -> Option<Link> {
 	let index = usize::from(port);
 	let producer = match node {
-		Node::RegionIn(RegionIn { input, .. }) => Link(*input, port),
-		Node::GammaIn(GammaIn { arguments, .. }) => arguments.get(index).copied()?,
 		Node::Identity(Identity { sources }) => sources.get(index).copied()?,
 
 		Node::Apply(_)
 		| Node::F32(_)
 		| Node::F64(_)
 		| Node::Fence(_)
+		| Node::GammaIn(_)
 		| Node::GammaOut(_)
 		| Node::GlobalGet(_)
 		| Node::GlobalNew(_)
@@ -57,6 +64,7 @@ fn get_next_producer(node: &Node, port: u16) -> Option<Link> {
 		| Node::OmegaIn(_)
 		| Node::OmegaOut(_)
 		| Node::RefIsNull(_)
+		| Node::RegionIn(_)
 		| Node::RegionOut(_)
 		| Node::TableCopy(_)
 		| Node::TableDrop(_)
